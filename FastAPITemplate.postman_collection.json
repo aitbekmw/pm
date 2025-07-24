@@ -1,0 +1,271 @@
+{
+	"info": {
+		"_postman_id": "93528560-3361-47f1-90c1-a413d99fb222",
+		"name": "FastAPITemplate",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "32933283"
+	},
+	"item": [
+		{
+			"name": "Login",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "    {\n        \"login\": \"user1\",\n        \"password\": \"secret\"\n    }",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8000/api/v1/auth/login",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"v1",
+						"auth",
+						"login"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get List Profile",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwic3ViIjoidXNlcjEiLCJ1c2VybmFtZSI6IkpvaG4gRG9lIiwiZW1haWwiOiJqb2huLmRvZUBleGFtcGxlLmNvbSIsImV4cCI6MTczMDg3MjE1OCwiaWF0IjoxNzMwODcwMzU4LCJqdGkiOiJhZGE2YWVkMi1jMDc2LTRiZDgtYWNmYi02MDc4NzMwMjQ3MTcifQ.ep03JbmR3I8Q4JzjXbStHz8ByApBZ3zuvlb61u-Mo6A",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8000/api/v1/profile/profile-list/1/",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"v1",
+						"profile",
+						"profile-list",
+						"1",
+						""
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Profile",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8000/api/v1/profile/profile/1",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"v1",
+						"profile",
+						"profile",
+						"1"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Create Profile",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "    {\n        \"login\": \"john_doe\",\n        \"user_type\": \"admin\",\n        \"phone_number\": \"1234567890\",\n        \"first_name\": \"John\",\n        \"last_name\": \"Doe\",\n        \"middle_name\": \"Michael\",\n        \"email\": \"john.doe@example.com\",\n        \"gender\": true,\n        \"date_of_birth\": \"1990-01-15T00:00:00\"\n    }",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8000/api/v1/profile/profile",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"v1",
+						"profile",
+						"profile"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Update Profile",
+			"request": {
+				"method": "PUT",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"id\": 14,\n    \"login\": \"john_doe14\",\n    \"user_type\": \"another\",\n    \"password\": \"secret\",\n    \"phone_number\": \"1234567890\",\n    \"first_name\": \"John\",\n    \"last_name\": \"Doe\",\n    \"middle_name\": \"Michael\",\n    \"email\": \"john.doe@example.com\",\n    \"gender\": true,\n    \"created_date\": null,\n    \"date_of_birth\": \"1990-01-15T00:00:00\",\n    \"updated_date\": null,\n    \"is_active\": false\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8000/api/v1/profile/profile/2",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"v1",
+						"profile",
+						"profile",
+						"2"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get List Profile",
+			"request": {
+				"method": "DELETE",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8000/api/v1/profile/profile/1",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"v1",
+						"profile",
+						"profile",
+						"1"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Profile Me",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwic3ViIjoidXNlcjQiLCJ1c2VybmFtZSI6IkJvYiBCcm93biIsImVtYWlsIjoiYm9iLmJyb3duQGV4YW1wbGUuY29tIiwiZXhwIjoxNzMwNjYxMzMwLCJpYXQiOjE3MzA2NTk1MzAsImp0aSI6ImVhYjAzYzg5LWYwM2ItNDQ3OC1hZGU0LTc0N2Y4Nzk1MTFmMyJ9.SqeseeJx1kk4o6dB6nOpCFxKWZz4fhFhpPPqNhdKnf2xxrTO9Dl5VuPgXA6qcnf6PU52_rE84mxAZVrmqpPhsrKicG_WMl5HEUa9HExPkkdwN6Hqx-T3oZrMySJxecUoElALdPx0_zWL3Npe8dHTs6n3KwBlydP0E5j0kSnjR_c4dF5jGG8xdK5texyFRlFqiTFuRoLCES092jPDYz8wewJwCxmvMs-G6xLAvDJeR6k9W6yGanw6jfFa0rsUqdIdfEkAMAseLRFbSZjvt8kcY9ogEH1HUdPxDupMBjRyBbzcKVEv-4vOHQwgh_la1x8ZOJw8wCCcOFsVpBRjRar8ig",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "http://localhost:8000/api/v1/auth/profile/me/",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"v1",
+						"auth",
+						"profile",
+						"me",
+						""
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Refresh Token",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoicmVmcmVzaCIsInN1YiI6InVzZXIxIiwiZXhwIjoxNzMzNDU5MjI5LCJpYXQiOjE3MzA4NjcyMjksImp0aSI6ImI1MDVhNzhkLWY0OWItNGU3NS05ZDZhLTFjMTYwYWIzNDBjZiJ9.TVXLv_SFkL79tr_UvVvBS8BIuEGK_8N1a31rS5WD3A0",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "http://localhost:8000/api/v1/auth/refresh",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"v1",
+						"auth",
+						"refresh"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
