@@ -1,0 +1,33 @@
+version: '3.12'
+
+services:
+  db:
+    image: postgres:16
+    secrets:
+      - postgres_password
+    environment:
+       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+       POSTGRES_DB: ${POSTGRES_DB}
+       POSTGRES_USER: ${POSTGRES_USER}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - project-net
+
+  redis:
+    image: redis
+    networks:
+      - project-net
+
+volumes:
+  postgres-data: {}
+
+networks:
+  project-net:
+    external: true
+
+secrets:
+  postgres_password:
+    external: true
