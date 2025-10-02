@@ -24,15 +24,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libmagic1 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Копируем только бинарь uv
 COPY --from=builder /root/.local/bin/uv /usr/local/bin/uv
+COPY --from=builder /app/.venv /app/.venv
 
 WORKDIR /app
 ENV VIRTUAL_ENV=/app/.venv
 ENV UV_PROJECT_ENVIRONMENT=/app/.venv
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-COPY --from=builder /app/.venv /app/.venv
 COPY . .
 
 RUN chmod +x /app/entrypoint.sh
