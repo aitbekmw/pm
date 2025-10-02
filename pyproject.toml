@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "rag-backend"
+name = "pm-assistant"
 version = "0.1.0"
 description = "RAG Backend API"
 readme = "docs/README.md"
