@@ -4,12 +4,11 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir uv
 
-COPY pyproject.toml ./
-COPY uv.lock* ./
-
-RUN uv sync --frozen
+COPY pyproject.toml uv.lock* ./
 
 COPY . .
+
+RUN uv sync --frozen
 
 RUN chmod +x /app/entrypoint.sh
 
