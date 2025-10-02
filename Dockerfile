@@ -1,16 +1,39 @@
-﻿FROM python:3.11-slim
+﻿FROM python:3.13.2-slim AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+ADD https://astral.sh/uv/install.sh /uv-installer.sh
+RUN sh /uv-installer.sh && rm /uv-installer.sh
+ENV PATH="/root/.local/bin/:$PATH"
 
 WORKDIR /app
+ENV VIRTUAL_ENV=/app/.venv
+ENV UV_PROJECT_ENVIRONMENT=/app/.venv
 
-RUN pip install --no-cache-dir uv
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-install-project --no-dev \
+    && rm -rf /root/.cache/uv/*
 
-COPY pyproject.toml uv.lock* ./
+# --- Runtime stage ---
+FROM python:3.13.2-slim AS runtime
 
-RUN ls -la && cat pyproject.toml
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 ca-certificates \
+    libmagic1 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Копируем только бинарь uv
+COPY --from=builder /root/.local/bin/uv /usr/local/bin/uv
+
+WORKDIR /app
+ENV VIRTUAL_ENV=/app/.venv
+ENV UV_PROJECT_ENVIRONMENT=/app/.venv
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+COPY --from=builder /app/.venv /app/.venv
 COPY . .
-
-RUN uv sync --frozen
 
 RUN chmod +x /app/entrypoint.sh
 
