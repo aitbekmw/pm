@@ -18,9 +18,10 @@ build:build_images:
     - docker build -t "$BACK_IMAGE" -f Dockerfile .
     - docker push "$BACK_IMAGE"
   tags:
-    - build
+    - global-runner
   only:
-    - dev
+    - main
+  when: manual
 
 deploy:deploy_prod:
   stage: deploy
@@ -33,4 +34,5 @@ deploy:deploy_prod:
   tags:
     - deploy
   only:
-    - dev
+    - main
+  when: manual
