@@ -1,1 +1,18 @@
-#!/usr/bin/env bashset -euo pipefailALEMBIC_CMD="uv run alembic"API_PORT=8000echo "Âûïîëíÿþ ìèãðàöèè: upgrade head"${ALEMBIC_CMD} upgrade headecho "Çàïóñêàþ ñåðâèñû..."uv run -m src.main &MAIN_PID=$!uv run uvicorn src.server:app --host 0.0.0.0 --port ${API_PORT} &UVICORN_PID=$!trap 'kill -TERM ${MAIN_PID} ${UVICORN_PID} 2>/dev/null || true' TERM INTwait ${MAIN_PID} ${UVICORN_PID}
+ï»¿#!/usr/bin/env bash
+set -euo pipefail
+
+ALEMBIC_CMD="uv run alembic"
+API_PORT=8000
+
+echo "Ð’Ñ‹Ð¿Ð¾Ð»Ð½ÑÑŽ Ð¼Ð¸Ð³Ñ€Ð°Ñ†Ð¸Ð¸: upgrade head"
+${ALEMBIC_CMD} upgrade head
+
+echo "Ð—Ð°Ð¿ÑƒÑÐºÐ°ÑŽ ÑÐµÑ€Ð²Ð¸ÑÑ‹..."
+uv run -m src.main &
+MAIN_PID=$!
+
+uv run uvicorn src.server:app --host 0.0.0.0 --port ${API_PORT} &
+UVICORN_PID=$!
+
+trap 'kill -TERM ${MAIN_PID} ${UVICORN_PID} 2>/dev/null || true' TERM INT
+wait ${MAIN_PID} ${UVICORN_PID}
