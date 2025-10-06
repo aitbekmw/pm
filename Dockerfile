@@ -34,6 +34,8 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
 COPY . .
 
-RUN chmod +x /app/entrypoint.sh
+# Fix line endings and make executable
+RUN sed -i 's/\r$//' /app/entrypoint.sh && \
+    chmod +x /app/entrypoint.sh
 
 ENTRYPOINT ["/app/entrypoint.sh"]
