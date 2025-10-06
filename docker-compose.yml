@@ -3,6 +3,7 @@
 
 services:
   postgres:
+    platform: linux/amd64
     image: pgvector/pgvector:pg16
     container_name: db
     volumes:
@@ -14,6 +15,10 @@ services:
     restart: unless-stopped
 
   api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    platform: linux/amd64
     image: ${CI_REGISTRY_IMAGE}:${IMAGE_TAG:-latest}
     container_name: api
     env_file:
