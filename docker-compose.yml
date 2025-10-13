@@ -1,5 +1,6 @@
 ﻿volumes:
   postgres_data:
+  redis_data:
 
 services:
   postgres:
@@ -13,6 +14,15 @@ services:
       - "5432:5432"
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
   api:
     image: ${CI_REGISTRY_IMAGE}:${IMAGE_TAG:-latest}
     container_name: api
@@ -22,4 +32,16 @@ services:
     - "${PORT:-8000}:8000"
     depends_on:
       - postgres
+      - redis
+    restart: unless-stopped
+
+  worker:
+    image: ${CI_REGISTRY_IMAGE}:${IMAGE_TAG:-latest}
+    container_name: worker
+    env_file:
+      - .env
+    entrypoint: ["/app/worker.sh"]
+    depends_on:
+      - postgres
+      - redis
     restart: unless-stopped
