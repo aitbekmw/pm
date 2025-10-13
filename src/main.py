@@ -5,6 +5,9 @@ from fastapi.responses import JSONResponse
 from src.core.config import settings
 from src.core.logging import setup_logging
 from src.users.routes import router as users_router
+from src.projects.routes import router as projects_router
+from src.meetings.routes import router as meetings_router
+from src.notifications.routes import router as notifications_router
 
 
 setup_logging()
@@ -25,6 +28,9 @@ app.add_middleware(
 
 
 app.include_router(users_router, prefix=settings.api_prefix)
+app.include_router(projects_router, prefix=settings.api_prefix)
+app.include_router(meetings_router, prefix=settings.api_prefix)
+app.include_router(notifications_router, prefix=settings.api_prefix)
 
 @app.get("/")
 async def root():
