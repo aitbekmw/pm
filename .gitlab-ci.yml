@@ -1,4 +1,4 @@
-﻿# rag-backend
+# rag-backend
 stages:
   - build
   - deploy

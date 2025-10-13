@@ -1,4 +1,4 @@
-﻿FROM python:3.13.2-slim AS builder
+FROM python:3.13.2-slim AS builder
 
 # Установка зависимостей для сборки
 RUN apt-get update && apt-get install -y --no-install-recommends \
