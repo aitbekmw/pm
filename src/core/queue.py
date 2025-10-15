@@ -3,7 +3,7 @@ from arq.connections import RedisSettings
 from src.core.config import settings
 
 
-redis_settings = RedisSettings.from_url(settings.REDIS_URL)
+redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
 
 
 async def get_redis_pool():
