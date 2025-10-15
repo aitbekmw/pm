@@ -8,6 +8,8 @@ from src.meetings.models import Meeting, MeetingProcessing, Transcript, Summary
 from src.core.storage import storage
 from src.core.ai_services import ai_service
 from src.meetings import selectors
+from arq.connections import RedisSettings
+from src.core.config import settings
 
 
 async def process_meeting(ctx, meeting_id: int):
@@ -169,8 +171,5 @@ class WorkerSettings:
     functions = [process_meeting]
     on_startup = startup
     on_shutdown = shutdown
-    redis_settings = {
-        'host': 'localhost',
-        'port': 6379,
-    }
+    redis_settings = RedisSettings.from_url(settings.REDIS_URL)
 
