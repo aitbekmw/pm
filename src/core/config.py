@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     GPT_MODEL: str = Field(default="gpt-4-turbo-preview", env="GPT_MODEL")
 
     # Redis for ARQ
-    REDIS_URL: str = Field(default="redis://localhost:6379", env="REDIS_URL")
+    REDIS_URL: str = Field(default="redis://redis:6379", env="REDIS_URL")
     
     class Config:
         env_file = ".env"

@@ -171,5 +171,5 @@ class WorkerSettings:
     functions = [process_meeting]
     on_startup = startup
     on_shutdown = shutdown
-    redis_settings = RedisSettings.from_url(settings.REDIS_URL)
+    redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
 
