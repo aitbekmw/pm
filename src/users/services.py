@@ -16,18 +16,18 @@ def _ldap_authenticate(username: str, password: str) -> Optional[dict]:
     Аутентификация пользователя через LDAP/AD.
     Использует сервисный аккаунт для подключения к LDAP и проверяет учетные данные пользователя.
     """
-    # Создаем DN для сервисного пользователя
-    service_user_dn = f"CN={settings.LDAP_SERVICE_USER},CN=Users,{settings.LDAP_BASE_DN}"
+    # Создаем сервер с правильными настройками
+    server = Server(settings.LDAP_SERVER, use_ssl=False, get_info=ALL)
     
-    server = Server(settings.LDAP_SERVER, get_info=ALL)
+    # Формируем имя сервисного пользователя в формате domain\username
+    service_user = f"{settings.LDAP_USER_DN}\\{settings.LDAP_SERVICE_USER}"
     
     try:
         # Подключаемся как сервисный пользователь
         conn = Connection(
             server,
-            user=service_user_dn,
+            user=service_user,
             password=settings.LDAP_SERVICE_PASSWORD,
-            authentication=None,  # Используем простую аутентификацию для LDAP
             auto_bind=True,
         )
         
@@ -59,7 +59,6 @@ def _ldap_authenticate(username: str, password: str) -> Optional[dict]:
                 server,
                 user=user_dn,
                 password=password,
-                authentication=None,
                 auto_bind=True,
             )
             user_conn.unbind()
