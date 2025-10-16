@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, Response, Request, HTTPException, status
+from fastapi import APIRouter, Depends, Response, Request, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.deps import get_db
 from src.users import services
-from src.users.schemas import LoginRequest, LoginResponse, UserOut
+from src.users.schemas import LoginRequest, LoginResponse, UserOut, UserUpdateRole, UserList
 from src.core.config import settings
 
 
@@ -48,4 +48,68 @@ async def me(request: Request, db: AsyncSession = Depends(get_db)):
     user = await services.get_user_by_session(db, session_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
+    return user
+
+
+async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)):
+    """Зависимость для получения текущего пользователя"""
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    user = await services.get_user_by_session(db, session_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
+    return user
+
+
+@router.get("/", response_model=UserList)
+async def list_users(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    current_user: UserOut = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Получает список пользователей (только для Manager)"""
+    if current_user.role != "Manager":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    
+    users, total = await services.get_users(db, skip=skip, limit=limit)
+    return UserList(users=users, total=total)
+
+
+@router.put("/{user_id}/role", response_model=UserOut)
+async def update_user_role(
+    user_id: int,
+    role_data: UserUpdateRole,
+    current_user: UserOut = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Обновляет роль пользователя (только для Manager)"""
+    updated_user = await services.update_user_role(
+        db, user_id, role_data.role, current_user
+    )
+    
+    if not updated_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="User not found or insufficient permissions"
+        )
+    
+    return updated_user
+
+
+@router.get("/{user_id}", response_model=UserOut)
+async def get_user(
+    user_id: int,
+    current_user: UserOut = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Получает информацию о пользователе по ID (только для Manager)"""
+    if current_user.role != "Manager":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    
+    user = await services.get_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    
     return user

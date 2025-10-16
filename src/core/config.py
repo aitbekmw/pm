@@ -16,6 +16,14 @@ class Settings(BaseSettings):
     api_prefix: str = Field(default="/api", env="API_PREFIX")
 
     # LDAP / AD
+    LDAP_SERVER: str = Field(default="ldap://ad.example.com", env="LDAP_SERVER")
+    LDAP_BASE_DN: str = Field(default="DC=example,DC=com", env="LDAP_BASE_DN")
+    LDAP_USER_DN: str = Field(..., env="LDAP_USER_DN")
+    LDAP_SERVICE_USER: str = Field(..., env="LDAP_SERVICE_USER")
+    LDAP_ADMIN_GROUP: str = Field(..., env="LDAP_ADMIN_GROUP")
+    LDAP_SERVICE_PASSWORD: str = Field(..., env="LDAP_SERVICE_PASSWORD")
+    
+    # Legacy AD fields (for backward compatibility)
     AD_SERVER: str = Field(default="ldap://ad.example.com", env="AD_SERVER")
     AD_DOMAIN: str = Field(default="EXAMPLE", env="AD_DOMAIN")
     AD_BASE_DN: str = Field(default="DC=example,DC=com", env="AD_BASE_DN")

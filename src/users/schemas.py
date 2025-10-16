@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 
@@ -24,3 +24,12 @@ class UserOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class UserUpdateRole(BaseModel):
+    role: str  # Member | PM | Manager
+
+
+class UserList(BaseModel):
+    users: List[UserOut]
+    total: int
