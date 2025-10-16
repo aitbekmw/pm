@@ -36,24 +36,38 @@ def _ldap_authenticate(username: str, password: str) -> Optional[dict]:
             
         # Ищем пользователя в AD
         search_filter = f"(sAMAccountName={username})"
+        print(f"LDAP search: {search_filter} in {settings.LDAP_BASE_DN}")
+        
         conn.search(
             settings.LDAP_BASE_DN,
             search_filter,
             attributes=["givenName", "sn", "mail", "memberOf", "userAccountControl"]
         )
         
+        print(f"LDAP search result: {len(conn.entries)} entries found")
+        
         if not conn.entries:
+            print(f"User {username} not found in AD")
             return None
             
         entry = conn.entries[0]
         
         # Проверяем, что аккаунт активен (userAccountControl = 512 означает активный аккаунт)
         user_account_control = getattr(entry, "userAccountControl", None)
-        if user_account_control and int(user_account_control) & 2:  # 2 = ACCOUNTDISABLE
-            return None
+        if user_account_control:
+            try:
+                # Преобразуем в строку, затем в int
+                uac_value = str(user_account_control)
+                if uac_value and int(uac_value) & 2:  # 2 = ACCOUNTDISABLE
+                    return None
+            except (ValueError, TypeError):
+                # Если не можем преобразовать, пропускаем проверку
+                pass
             
         # Проверяем пароль пользователя, пытаясь подключиться с его учетными данными
         user_dn = entry.entry_dn
+        print(f"Checking password for user DN: {user_dn}")
+        
         try:
             user_conn = Connection(
                 server,
@@ -61,8 +75,10 @@ def _ldap_authenticate(username: str, password: str) -> Optional[dict]:
                 password=password,
                 auto_bind=True,
             )
+            print("Password verification successful")
             user_conn.unbind()
-        except Exception:
+        except Exception as e:
+            print(f"Password verification failed: {e}")
             return None  # Неверный пароль
             
         # Возвращаем информацию о пользователе
