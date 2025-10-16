@@ -5,6 +5,7 @@ from src.db.deps import get_db
 from src.users import services
 from src.users.schemas import LoginRequest, LoginResponse, UserOut, UserUpdateRole, UserList
 from src.core.config import settings
+from src.core.permissions import get_current_user
 
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -28,6 +29,7 @@ async def login(payload: LoginRequest, response: Response, db: AsyncSession = De
         secure=not settings.debug,
         samesite="lax",
         path="/",
+        domain=settings.COOKIE_DOMAIN,
     )
     return {"success": True}
 
@@ -51,15 +53,6 @@ async def me(request: Request, db: AsyncSession = Depends(get_db)):
     return user
 
 
-async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)):
-    """Зависимость для получения текущего пользователя"""
-    session_id = request.cookies.get(SESSION_COOKIE_NAME)
-    if not session_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    user = await services.get_user_by_session(db, session_id)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
-    return user
 
 
 @router.get("/", response_model=UserList)

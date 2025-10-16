@@ -31,6 +31,7 @@ class Settings(BaseSettings):
 
     # Session
     SESSION_TTL_DAYS: int = Field(default=30, env="SESSION_TTL_DAYS")
+    COOKIE_DOMAIN: Optional[str] = Field(default=None, env="COOKIE_DOMAIN")
 
     # S3 / MinIO
     S3_ENDPOINT_URL: str = Field(..., env="S3_ENDPOINT_URL")
