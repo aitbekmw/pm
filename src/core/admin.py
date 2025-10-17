@@ -1,4 +1,4 @@
-from sqladmin import Admin, ModelView, SelectField
+from sqladmin import Admin, ModelView
 from src.db.session import async_engine
 from src.users.models import User
 from src.projects.models import Project
@@ -29,13 +29,8 @@ class UserAdmin(ModelView, model=User):
     can_view_details = True
     page_size = 20
 
-    form_overrides = {
-        "role": SelectField,
-    }
-    form_args = {
-        "role": {
-            "choices": USER_ROLE_CHOICES
-        }
+    form_choices = {
+        "role": USER_ROLE_CHOICES
     }
 
 class ProjectAdmin(ModelView, model=Project):
