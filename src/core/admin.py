@@ -50,8 +50,8 @@ class MeetingAdmin(ModelView, model=Meeting):
 def setup_admin(app):
     """Setup admin panel for the FastAPI application"""
     admin = Admin(app, async_engine, authentication_backend=None, title="PM Assistant Admin")
-    admin.register_model(UserAdmin)
-    admin.register_model(ProjectAdmin)
-    admin.register_model(MeetingAdmin)
+    admin.add_view(UserAdmin)
+    admin.add_view(ProjectAdmin)
+    admin.add_view(MeetingAdmin)
     
     return admin
