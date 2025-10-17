@@ -4,6 +4,7 @@ from src.users.models import User
 from src.projects.models import Project
 from src.meetings.models import Meeting
 from src.core.admin_auth import AdminAuthenticationBackend
+from starlette.middleware.sessions import SessionMiddleware
 
 
 class UserAdmin(ModelView, model=User):
@@ -50,6 +51,8 @@ class MeetingAdmin(ModelView, model=Meeting):
 
 def setup_admin(app):
     """Setup admin panel for the FastAPI application with AD authentication"""
+    app.add_middleware(SessionMiddleware, secret_key="admin-secret-key-change-in-production")
+    
     authentication_backend = AdminAuthenticationBackend(secret_key="admin-secret-key-change-in-production")
     
     admin = Admin(
