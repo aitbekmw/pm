@@ -1,4 +1,4 @@
-from sqladmin import Admin, ModelView
+from sqladmin import Admin, ModelView, SelectField
 from src.db.session import async_engine
 from src.users.models import User
 from src.projects.models import Project
@@ -6,6 +6,15 @@ from src.meetings.models import Meeting
 from src.core.admin_auth import AdminAuthenticationBackend
 from starlette.middleware.sessions import SessionMiddleware
 
+USER_ROLE_CHOICES = [
+    ("PM", "PM"),
+    ("Member", "Member"),
+    ("Manager", "Manager"),
+    ("Backend Dev", "Backend Dev"),
+    ("Frontend Dev", "Frontend Dev"),
+    ("Designer", "Designer"),
+    ("QA", "QA"),
+]
 
 class UserAdmin(ModelView, model=User):
     name = "User"
@@ -20,6 +29,14 @@ class UserAdmin(ModelView, model=User):
     can_view_details = True
     page_size = 20
 
+    form_overrides = {
+        "role": SelectField,
+    }
+    form_args = {
+        "role": {
+            "choices": USER_ROLE_CHOICES
+        }
+    }
 
 class ProjectAdmin(ModelView, model=Project):
     name = "Project"
