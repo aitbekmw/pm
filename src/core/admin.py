@@ -5,6 +5,7 @@ from src.projects.models import Project
 from src.meetings.models import Meeting
 from src.core.admin_auth import AdminAuthenticationBackend
 from starlette.middleware.sessions import SessionMiddleware
+from wtforms import SelectField
 
 USER_ROLE_CHOICES = [
     ("PM", "PM"),
@@ -28,10 +29,17 @@ class UserAdmin(ModelView, model=User):
     can_delete = True
     can_view_details = True
     page_size = 20
-
+    
+    form_columns = [User.ad_account, User.first_name, User.last_name, User.role, User.is_active]
+    
     form_choices = {
         "role": USER_ROLE_CHOICES
     }
+    
+    def scaffold_form(self):
+        form_class = super().scaffold_form()
+        form_class.role = SelectField('Role', choices=USER_ROLE_CHOICES)
+        return form_class
 
 class ProjectAdmin(ModelView, model=Project):
     name = "Project"
