@@ -2,11 +2,10 @@ from sqladmin import Admin, ModelView
 from src.db.session import async_engine
 from src.users.models import User
 from src.projects.models import Project
-from src.meetings.models import Meeting
+from src.meetings.models import Meeting, MeetingProcessing, Transcript
 from src.core.admin_auth import AdminAuthenticationBackend
 from starlette.middleware.sessions import SessionMiddleware
 from wtforms import SelectField
-from wtforms.validators import DataRequired
 
 USER_ROLE_CHOICES = [
     ("PM", "PM"),
@@ -16,6 +15,13 @@ USER_ROLE_CHOICES = [
     ("Frontend Dev", "Frontend Dev"),
     ("Designer", "Designer"),
     ("QA", "QA"),
+]
+
+PROCESSING_STATUS_CHOICES = [
+    ("pending", "Pending"),
+    ("processing", "Processing"),
+    ("completed", "Completed"),
+    ("failed", "Failed"),
 ]
 
 class UserAdmin(ModelView, model=User):
@@ -62,7 +68,7 @@ class MeetingAdmin(ModelView, model=Meeting):
     name = "Meeting"
     name_plural = "Meetings"
     icon = "fa-solid fa-calendar"
-    column_list = [Meeting.id, Meeting.title, Meeting.project_id, Meeting.organizer_id, Meeting.meeting_date, Meeting.duration]
+    column_list = [Meeting.id, Meeting.title, Meeting.project_id, Meeting.organizer_id, Meeting.meeting_date, Meeting.duration, Meeting.audio_file_path]
     column_searchable_list = [Meeting.title, Meeting.comments]
     column_sortable_list = [Meeting.id, Meeting.meeting_date]
     can_create = True
@@ -70,6 +76,70 @@ class MeetingAdmin(ModelView, model=Meeting):
     can_delete = True
     can_view_details = True
     page_size = 20
+
+
+class MeetingProcessingAdmin(ModelView, model=MeetingProcessing):
+    name = "Processing Queue"
+    name_plural = "Processing Queue"
+    icon = "fa-solid fa-hourglass-half"
+    
+    column_list = [
+        MeetingProcessing.id, 
+        MeetingProcessing.meeting_id, 
+        MeetingProcessing.status, 
+        MeetingProcessing.current_stage,
+        MeetingProcessing.progress, 
+        MeetingProcessing.started_at,
+        MeetingProcessing.completed_at,
+        MeetingProcessing.error_message
+    ]
+    
+    column_searchable_list = [MeetingProcessing.status, MeetingProcessing.current_stage]
+    column_sortable_list = [MeetingProcessing.id, MeetingProcessing.started_at, MeetingProcessing.progress]
+    
+    can_create = False
+    can_edit = True
+    can_delete = False
+    can_view_details = True
+    page_size = 20
+    
+    form_columns = [MeetingProcessing.status, MeetingProcessing.current_stage, MeetingProcessing.progress, MeetingProcessing.error_message]
+    
+    form_overrides = {
+        "status": SelectField,
+    }
+    
+    form_args = {
+        "status": {
+            "choices": PROCESSING_STATUS_CHOICES,
+            "coerce": str
+        }
+    }
+
+
+class TranscriptAdmin(ModelView, model=Transcript):
+    name = "Transcript"
+    name_plural = "Transcripts"
+    icon = "fa-solid fa-file-lines"
+    
+    column_list = [
+        Transcript.id,
+        Transcript.meeting_id,
+        Transcript.content,
+        Transcript.created_at,
+        Transcript.updated_at
+    ]
+    
+    column_searchable_list = [Transcript.content]
+    column_sortable_list = [Transcript.id, Transcript.meeting_id, Transcript.created_at]
+    
+    can_create = False
+    can_edit = True
+    can_delete = False
+    can_view_details = True
+    page_size = 20
+    
+    form_columns = [Transcript.meeting_id, Transcript.content]
 
 
 def setup_admin(app):
@@ -87,5 +157,7 @@ def setup_admin(app):
     admin.add_view(UserAdmin)
     admin.add_view(ProjectAdmin)
     admin.add_view(MeetingAdmin)
+    admin.add_view(MeetingProcessingAdmin)
+    admin.add_view(TranscriptAdmin)
     
     return admin
