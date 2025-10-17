@@ -6,7 +6,6 @@ build-backend = "hatchling.build"
 name = "pm-assistant"
 version = "0.1.0"
 description = "PM Assistant Backend API"
-readme = "docs/README.md"
 requires-python = ">=3.11"
 dependencies = [
     "alembic>=1.16.1",
@@ -24,7 +23,7 @@ dependencies = [
     "arq>=0.25.0",
     "python-multipart>=0.0.6",
     "aiofiles>=23.0.0",
-    "crudadmin>=0.1.0",
+    "crudadmin",
 ]
 
 [project.optional-dependencies]
