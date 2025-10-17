@@ -11,7 +11,7 @@ class User(Base):
     ad_account: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     first_name: Mapped[str] = mapped_column(String, nullable=False)
     last_name: Mapped[str] = mapped_column(String, nullable=False)
-    role: Mapped[str] = mapped_column(String, nullable=False)  # PM | Member | Manager
+    role: Mapped[str] = mapped_column(String, nullable=False)  # PM | Member | Manager | Backend Dev | Frontend Dev | Designer | QA
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(

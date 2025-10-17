@@ -1,0 +1,71 @@
+from typing import Optional
+from fastapi import Request, HTTPException, status
+from sqladmin.authentication import AuthenticationBackend
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
+from src.db.deps import get_db
+from src.users.models import User
+from src.users.services import _ldap_authenticate
+
+
+class AdminAuthenticationBackend(AuthenticationBackend):
+    """Кастомный authentication backend для админки с проверкой роли Manager"""
+    
+    async def login(self, request: Request) -> bool:
+        """Авторизация в админку через AD с проверкой роли Manager"""
+        form = await request.form()
+        username = form.get("username")
+        password = form.get("password")
+        
+        if not username or not password:
+            return False
+        
+        async for db in get_db():
+            try:
+                ad_info = _ldap_authenticate(username, password)
+                if ad_info is None:
+                    return False
+                
+                result = await db.execute(select(User).where(User.ad_account == username))
+                user: Optional[User] = result.scalars().first()
+                
+                if not user:
+                    return False
+                
+                if not user.is_active:
+                    return False
+                
+                # КРИТИЧЕСКАЯ ПРОВЕРКА: только Manager может войти в админку
+                if user.role != "Manager":
+                    return False
+                
+                request.session.update({
+                    "user_id": user.id,
+                    "ad_account": user.ad_account,
+                    "role": user.role,
+                    "authenticated": True
+                })
+                
+                return True
+                
+            except Exception as e:
+                print(f"Admin authentication error: {e}")
+                return False
+            finally:
+                await db.close()
+    
+    async def logout(self, request: Request) -> bool:
+        """Выход из админки"""
+        request.session.clear()
+        return True
+    
+    async def authenticate(self, request: Request) -> bool:
+        """Проверка аутентификации для доступа к админке"""
+        if not request.session.get("authenticated"):
+            return False
+        
+        if request.session.get("role") != "Manager":
+            return False
+        
+        return True

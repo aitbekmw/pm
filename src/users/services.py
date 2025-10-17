@@ -176,7 +176,7 @@ async def update_user_role(db: AsyncSession, user_id: int, role: str, current_us
         return None
     
     # Валидируем роль
-    valid_roles = ["Member", "PM", "Manager"]
+    valid_roles = ["Member", "PM", "Manager", "Backend Dev", "Frontend Dev", "Designer", "QA"]
     if role not in valid_roles:
         return None
     

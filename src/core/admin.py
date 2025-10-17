@@ -3,6 +3,7 @@ from src.db.session import async_engine
 from src.users.models import User
 from src.projects.models import Project
 from src.meetings.models import Meeting
+from src.core.admin_auth import AdminAuthenticationBackend
 
 
 class UserAdmin(ModelView, model=User):
@@ -48,8 +49,15 @@ class MeetingAdmin(ModelView, model=Meeting):
 
 
 def setup_admin(app):
-    """Setup admin panel for the FastAPI application"""
-    admin = Admin(app, async_engine, authentication_backend=None, title="PM Assistant Admin")
+    """Setup admin panel for the FastAPI application with AD authentication"""
+    authentication_backend = AdminAuthenticationBackend(secret_key="admin-secret-key-change-in-production")
+    
+    admin = Admin(
+        app, 
+        async_engine, 
+        authentication_backend=authentication_backend, 
+        title="PM Assistant Admin"
+    )
     admin.add_view(UserAdmin)
     admin.add_view(ProjectAdmin)
     admin.add_view(MeetingAdmin)

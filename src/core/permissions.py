@@ -60,5 +60,5 @@ def require_role(*allowed_roles: str):
 # Готовые зависимости для проверки ролей
 require_pm = require_role("PM")
 require_pm_or_manager = require_role("PM", "Manager")
-require_any_role = require_role("PM", "Manager", "Member")
+require_any_role = require_role("PM", "Manager", "Member", "Backend Dev", "Frontend Dev", "Designer", "QA")
 

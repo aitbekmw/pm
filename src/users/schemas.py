@@ -27,7 +27,7 @@ class UserOut(BaseModel):
 
 
 class UserUpdateRole(BaseModel):
-    role: str  # Member | PM | Manager
+    role: str  # Member | PM | Manager | Backend Dev | Frontend Dev | Designer | QA
 
 
 class UserList(BaseModel):
