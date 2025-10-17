@@ -24,6 +24,7 @@ dependencies = [
     "arq>=0.25.0",
     "python-multipart>=0.0.6",
     "aiofiles>=23.0.0",
+    "crudadmin>=0.1.0",
 ]
 
 [project.optional-dependencies]
