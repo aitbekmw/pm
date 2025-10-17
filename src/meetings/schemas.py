@@ -140,3 +140,25 @@ class MeetingDetailsOut(BaseModel):
     class Config:
         from_attributes = True
 
+
+class MeetingsFilterParams(BaseModel):
+    """Параметры для фильтрации встреч"""
+    organizer_id: Optional[int] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    min_duration: Optional[int] = None
+    max_duration: Optional[int] = None
+    sort_by: str = "date_desc"  # date_asc, date_desc, duration_asc, duration_desc
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "organizer_id": 1,
+                "start_date": "2024-01-01T00:00:00Z",
+                "end_date": "2024-12-31T23:59:59Z",
+                "min_duration": 30,
+                "max_duration": 120,
+                "sort_by": "date_desc"
+            }
+        }
+

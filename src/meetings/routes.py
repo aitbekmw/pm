@@ -63,12 +63,32 @@ async def create_meeting(
 @router.get("/", response_model=List[schemas.MeetingListOut])
 async def get_meetings(
     project_id: Optional[int] = Query(None),
+    organizer_id: Optional[int] = Query(None),
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
+    min_duration: Optional[int] = Query(None, ge=0, description="Минимальная длительность в минутах"),
+    max_duration: Optional[int] = Query(None, ge=0, description="Максимальная длительность в минутах"),
+    sort_by: str = Query("date_desc", regex="^(date_asc|date_desc|duration_asc|duration_desc)$"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Получить список встреч (по проекту или все встречи пользователя)"""
+    """
+    Получить список встреч с фильтрацией и сортировкой.
+    
+    Фильтрация по:
+    - organizer_id: ID организатора встречи
+    - start_date: начало периода (ISO 8601 формат)
+    - end_date: конец периода (ISO 8601 формат)
+    - min_duration / max_duration: диапазон длительности в минутах
+    
+    Сортировка:
+    - date_desc: новые → старые (по умолчанию)
+    - date_asc: старые → новые
+    - duration_asc: от коротких → к длинным
+    - duration_desc: от длинных → к коротким
+    """
     if project_id:
         # Проверить доступ
         has_access = await project_selectors.check_user_has_project_access(
@@ -79,9 +99,32 @@ async def get_meetings(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied to this project"
             )
-        meetings = await selectors.get_project_meetings(db, project_id, skip, limit)
+        meetings = await selectors.get_project_meetings_with_filters(
+            db, 
+            project_id,
+            organizer_id=organizer_id,
+            start_date=start_date,
+            end_date=end_date,
+            min_duration=min_duration,
+            max_duration=max_duration,
+            sort_by=sort_by,
+            skip=skip,
+            limit=limit
+        )
     else:
-        meetings = await selectors.get_user_meetings(db, current_user.id, skip, limit)
+        meetings = await selectors.get_meetings_with_filters(
+            db,
+            current_user.id,
+            project_id=project_id,
+            organizer_id=organizer_id,
+            start_date=start_date,
+            end_date=end_date,
+            min_duration=min_duration,
+            max_duration=max_duration,
+            sort_by=sort_by,
+            skip=skip,
+            limit=limit
+        )
     
     return meetings
 

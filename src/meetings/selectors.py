@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func
 from typing import Optional
+from datetime import datetime
 
 from src.meetings.models import (
     Meeting, Transcript, Summary, Note, ActionItem, MeetingProcessing
@@ -152,5 +153,135 @@ async def search_meetings(
         .offset(skip)
         .limit(limit)
     )
+    return list(result.scalars().all())
+
+
+async def get_meetings_with_filters(
+    db: AsyncSession,
+    user_id: int,
+    project_id: Optional[int] = None,
+    organizer_id: Optional[int] = None,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    min_duration: Optional[int] = None,
+    max_duration: Optional[int] = None,
+    sort_by: str = "date_desc",
+    skip: int = 0,
+    limit: int = 50
+) -> list[Meeting]:
+    """
+    Получить встречи с фильтрацией и сортировкой.
+    
+    Параметры фильтрации:
+    - organizer_id: ID организатора встречи
+    - start_date: начало периода
+    - end_date: конец периода
+    - min_duration: минимальная длительность в минутах
+    - max_duration: максимальная длительность в минутах
+    
+    Параметры сортировки (sort_by):
+    - date_desc: новые → старые (по умолчанию)
+    - date_asc: старые → новые
+    - duration_asc: от коротких → к длинным
+    - duration_desc: от длинных → к коротким
+    """
+    filters = [Meeting.organizer_id == user_id]
+    
+    if project_id is not None:
+        filters.append(Meeting.project_id == project_id)
+    
+    if organizer_id is not None:
+        filters.append(Meeting.organizer_id == organizer_id)
+    
+    if start_date is not None:
+        filters.append(Meeting.meeting_date >= start_date)
+    
+    if end_date is not None:
+        filters.append(Meeting.meeting_date <= end_date)
+    
+    if min_duration is not None:
+        filters.append(Meeting.duration >= min_duration)
+    
+    if max_duration is not None:
+        filters.append(Meeting.duration <= max_duration)
+    
+    query = select(Meeting).where(and_(*filters))
+    
+    # Применить сортировку
+    if sort_by == "date_asc":
+        query = query.order_by(Meeting.meeting_date.asc())
+    elif sort_by == "duration_asc":
+        query = query.order_by(Meeting.duration.asc())
+    elif sort_by == "duration_desc":
+        query = query.order_by(Meeting.duration.desc())
+    else:  # date_desc по умолчанию
+        query = query.order_by(Meeting.meeting_date.desc())
+    
+    query = query.offset(skip).limit(limit)
+    
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+async def get_project_meetings_with_filters(
+    db: AsyncSession,
+    project_id: int,
+    organizer_id: Optional[int] = None,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    min_duration: Optional[int] = None,
+    max_duration: Optional[int] = None,
+    sort_by: str = "date_desc",
+    skip: int = 0,
+    limit: int = 50
+) -> list[Meeting]:
+    """
+    Получить встречи проекта с фильтрацией и сортировкой.
+    
+    Параметры фильтрации:
+    - organizer_id: ID организатора встречи
+    - start_date: начало периода
+    - end_date: конец периода
+    - min_duration: минимальная длительность в минутах
+    - max_duration: максимальная длительность в минутах
+    
+    Параметры сортировки (sort_by):
+    - date_desc: новые → старые (по умолчанию)
+    - date_asc: старые → новые
+    - duration_asc: от коротких → к длинным
+    - duration_desc: от длинных → к коротким
+    """
+    filters = [Meeting.project_id == project_id]
+    
+    if organizer_id is not None:
+        filters.append(Meeting.organizer_id == organizer_id)
+    
+    if start_date is not None:
+        filters.append(Meeting.meeting_date >= start_date)
+    
+    if end_date is not None:
+        filters.append(Meeting.meeting_date <= end_date)
+    
+    if min_duration is not None:
+        filters.append(Meeting.duration >= min_duration)
+    
+    if max_duration is not None:
+        filters.append(Meeting.duration <= max_duration)
+    
+    query = select(Meeting).where(and_(*filters))
+    
+    # Применить сортировку
+    if sort_by == "date_asc":
+        query = query.order_by(Meeting.meeting_date.asc())
+    elif sort_by == "duration_asc":
+        query = query.order_by(Meeting.duration.asc())
+    elif sort_by == "duration_desc":
+        query = query.order_by(Meeting.duration.desc())
+    else:  # date_desc по умолчанию
+        query = query.order_by(Meeting.meeting_date.desc())
+    
+    query = query.offset(skip).limit(limit)
+    
+    result = await db.execute(query)
     return list(result.scalars().all())
 
