@@ -23,7 +23,8 @@ dependencies = [
     "arq>=0.25.0",
     "python-multipart>=0.0.6",
     "aiofiles>=23.0.0",
-    "crudadmin",
+    "sqladmin>=0.18.0",
+    "starlette-admin>=0.3.0",
 ]
 
 [project.optional-dependencies]
