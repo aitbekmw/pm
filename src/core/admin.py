@@ -1,6 +1,5 @@
 from sqladmin import Admin, ModelView
-from sqlalchemy.ext.asyncio import AsyncEngine
-from src.db.session import engine
+from src.db.session import async_engine
 from src.users.models import User
 from src.projects.models import Project
 from src.meetings.models import Meeting
@@ -50,9 +49,7 @@ class MeetingAdmin(ModelView, model=Meeting):
 
 def setup_admin(app):
     """Setup admin panel for the FastAPI application"""
-    admin = Admin(app, engine, authentication_backend=None, title="PM Assistant Admin")
-    
-    # Register models
+    admin = Admin(app, async_engine, authentication_backend=None, title="PM Assistant Admin")
     admin.register_model(UserAdmin)
     admin.register_model(ProjectAdmin)
     admin.register_model(MeetingAdmin)
