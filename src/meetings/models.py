@@ -9,9 +9,13 @@ from sqlalchemy import (
     ForeignKey,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from typing import TYPE_CHECKING
 
 from src.db.base import Base
+
+if TYPE_CHECKING:
+    from src.users.models import User
 
 
 class Meeting(Base):
@@ -30,6 +34,9 @@ class Meeting(Base):
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+    
+    # Relationship для загрузки организатора
+    organizer: Mapped["User | None"] = relationship("User", foreign_keys=[organizer_id], lazy="select")
 
 
 class MeetingProcessing(Base):

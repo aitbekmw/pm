@@ -3,7 +3,7 @@ import secrets
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete, func
+from sqlalchemy import select, delete, func, or_
 
 from ldap3 import Server, Connection, ALL, NTLM
 
@@ -151,15 +151,35 @@ async def get_user_by_session(db: AsyncSession, session_id: str) -> Optional[Use
     return result.scalars().first()
 
 
-async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100) -> tuple[list[User], int]:
-    """Получает список пользователей с пагинацией"""
+async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100, search: Optional[str] = None) -> tuple[list[User], int]:
+    """Получает список пользователей с пагинацией и поиском
+    
+    Параметры:
+    - skip: смещение для пагинации
+    - limit: количество результатов
+    - search: поиск по имени, фамилии или логину (ad_account)
+    """
+    # Получаем базовый запрос
+    query = select(User)
+    
+    # Добавляем фильтр поиска если указан
+    if search and search.strip():
+        search_term = f"%{search.strip()}%"
+        query = query.where(
+            or_(
+                User.first_name.ilike(search_term),
+                User.last_name.ilike(search_term),
+                User.ad_account.ilike(search_term)
+            )
+        )
+    
     # Получаем общее количество пользователей
-    count_result = await db.execute(select(func.count(User.id)))
-    total = count_result.scalar()
+    count_result = await db.execute(select(func.count(User.id)).select_from(query.subquery()))
+    total = count_result.scalar() or 0
     
     # Получаем пользователей с пагинацией
     result = await db.execute(
-        select(User)
+        query
         .offset(skip)
         .limit(limit)
         .order_by(User.created_at.desc())

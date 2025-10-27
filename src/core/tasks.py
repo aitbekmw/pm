@@ -82,9 +82,22 @@ async def process_meeting(ctx, meeting_id: int):
             await db.commit()
             
             # Обновить длительность встречи если её не было
-            if not meeting.duration and transcript_data.get('duration'):
-                meeting.duration = int(transcript_data.get('duration'))
-                await db.commit()
+            # Duration может быть в секундах или минутах в зависимости от источника
+            if not meeting.duration:
+                duration = transcript_data.get('duration')
+                
+                if duration:
+                    # Если это float или очень большое число, вероятно в секундах
+                    if isinstance(duration, (int, float)):
+                        duration_minutes = float(duration)
+                        
+                        # Если duration > 1000 секунд (~16+ минут), это вероятно секунды
+                        if duration_minutes > 100:
+                            duration_minutes = duration_minutes / 60
+                        
+                        meeting.duration = int(round(duration_minutes))
+                        print(f"Updated meeting duration: {meeting.duration} minutes (from {duration})")
+                        await db.commit()
             
             # Шаг 2: Суммаризация
             processing.current_stage = "summarization"

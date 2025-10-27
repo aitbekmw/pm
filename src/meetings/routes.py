@@ -159,7 +159,8 @@ async def get_meetings(
         previous_skip = max(0, skip - limit)
         previous_url = f"{base_url}?skip={previous_skip}&limit={limit}"
     
-    results = [schemas.MeetingListOut.from_orm(meeting) for meeting in meetings]
+    # Преобразуем Meeting объекты в Pydantic models с информацией об организаторе
+    results = [schemas.MeetingListOutWithOrganizer.from_orm(meeting) for meeting in meetings]
  
     return {
         "count": total,
@@ -541,7 +542,32 @@ async def get_processing_status(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Получить статус обработки встречи"""
+    """Получить статус обработки встречи
+    
+    Возвращает:
+    - status: "not_started", "processing", "completed", "failed"
+    - current_stage: "transcription", "summarization", "action_items"
+    - progress: 0-100 (процент выполнения)
+    - error_message: текст ошибки (если есть)
+    - started_at: время начала обработки
+    - completed_at: время завершения
+    - estimated_completion: приблизительное время завершения
+    
+    Пример:
+    GET /api/meetings/1/processing-status
+    
+    Ответ:
+    {
+      "meeting_id": 1,
+      "status": "processing",
+      "current_stage": "transcription",
+      "progress": 35,
+      "error_message": null,
+      "started_at": "2025-10-27T12:00:00Z",
+      "completed_at": null,
+      "estimated_completion": "2025-10-27T12:05:00Z"
+    }
+    """
     meeting = await selectors.get_meeting_by_id(db, meeting_id)
     if not meeting:
         raise HTTPException(
@@ -552,16 +578,164 @@ async def get_processing_status(
     processing = await selectors.get_meeting_processing(db, meeting_id)
     if not processing:
         return {
+            "meeting_id": meeting_id,
             "status": "not_started",
-            "message": "Processing has not been started"
+            "current_stage": None,
+            "progress": 0,
+            "error_message": None,
+            "started_at": None,
+            "completed_at": None,
+            "estimated_completion": None,
+            "message": "Обработка еще не начиналась"
         }
     
+    # Вычисляем приблизительное время завершения
+    estimated_completion = None
+    if processing.status == "processing" and processing.started_at and processing.progress > 0:
+        from datetime import datetime, timezone, timedelta
+        elapsed = (datetime.now(timezone.utc) - processing.started_at).total_seconds()
+        if processing.progress > 0:
+            total_estimated = (elapsed / processing.progress) * 100
+            remaining = total_estimated - elapsed
+            estimated_completion = datetime.now(timezone.utc) + timedelta(seconds=remaining)
+    
     return {
+        "meeting_id": meeting_id,
         "status": processing.status,
         "current_stage": processing.current_stage,
-        "progress": processing.progress,
+        "progress": processing.progress or 0,
         "error_message": processing.error_message,
         "started_at": processing.started_at,
-        "completed_at": processing.completed_at
+        "completed_at": processing.completed_at,
+        "estimated_completion": estimated_completion,
+        "stage_info": {
+            "transcription": "Транскрибация аудио",
+            "summarization": "Создание резюме встречи",
+            "action_items": "Извлечение задач"
+        }.get(processing.current_stage, "Unknown")
+    }
+
+
+@router.get("/{meeting_id}/duration")
+async def get_meeting_duration(
+    meeting_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Получить информацию о длительности встречи
+    
+    Возвращает:
+    - duration: Длительность в минутах (может быть None если не установлена)
+    - duration_seconds: Длительность в секундах
+    - audio_file_size: Размер аудио файла в байтах
+    - source: Источник информации ("manual", "transcription", "unknown")
+    
+    Пример:
+    GET /api/meetings/1/duration
+    
+    Ответ:
+    {
+      "meeting_id": 1,
+      "duration": 45,
+      "duration_seconds": 2700,
+      "audio_file_size": 3456789,
+      "source": "transcription"
+    }
+    """
+    meeting = await selectors.get_meeting_by_id(db, meeting_id)
+    if not meeting:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Meeting not found"
+        )
+    
+    # Проверяем доступ
+    if meeting.project_id:
+        has_access = await project_selectors.check_user_has_project_access(
+            db, current_user.id, meeting.project_id
+        )
+        if not has_access and meeting.organizer_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this meeting"
+            )
+    elif meeting.organizer_id != current_user.id:
+        # Если встреча не в проекте, может быть доступна всем аутентифицированным пользователям
+        pass
+    
+    # Определяем источник информации о длительности
+    source = "unknown"
+    processing = await selectors.get_meeting_processing(db, meeting_id)
+    if meeting.duration:
+        # Если есть транскрипт, длительность из него
+        transcript = await selectors.get_meeting_transcript(db, meeting_id)
+        if transcript:
+            source = "transcription"
+        else:
+            source = "manual"
+    
+    duration_seconds = None
+    if meeting.duration:
+        duration_seconds = meeting.duration * 60
+    
+    return {
+        "meeting_id": meeting_id,
+        "duration": meeting.duration,
+        "duration_seconds": duration_seconds,
+        "audio_file_size": meeting.audio_file_size,
+        "source": source,
+        "processing_status": processing.status if processing else "not_started"
+    }
+
+
+@router.put("/{meeting_id}/duration")
+async def update_meeting_duration(
+    meeting_id: int,
+    duration_minutes: int = Query(..., ge=1, description="Длительность встречи в минутах (минимум 1 минута)"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Обновить длительность встречи вручную
+    
+    Параметры:
+    - duration_minutes: Длительность в минутах (целое число, минимум 1)
+    
+    Пример:
+    PUT /api/meetings/1/duration?duration_minutes=45
+    
+    Ответ:
+    {
+      "meeting_id": 1,
+      "duration": 45,
+      "duration_seconds": 2700,
+      "message": "Duration updated successfully"
+    }
+    """
+    meeting = await selectors.get_meeting_by_id(db, meeting_id)
+    if not meeting:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Meeting not found"
+        )
+    
+    # Только организатор может обновлять длительность
+    if meeting.organizer_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only organizer can update meeting duration"
+        )
+    
+    # Обновляем длительность
+    old_duration = meeting.duration
+    meeting.duration = duration_minutes
+    await db.commit()
+    await db.refresh(meeting)
+    
+    return {
+        "meeting_id": meeting_id,
+        "duration": meeting.duration,
+        "duration_seconds": meeting.duration * 60,
+        "previous_duration": old_duration,
+        "message": f"Duration updated successfully from {old_duration} to {duration_minutes} minutes"
     }
 

@@ -4,6 +4,22 @@ from datetime import datetime
 from src.core.storage import storage
 
 
+class OrganizerInfo(BaseModel):
+    """Информация об организаторе встречи"""
+    id: int
+    ad_account: str
+    first_name: str
+    last_name: str
+    
+    class Config:
+        from_attributes = True
+    
+    @property
+    def full_name(self) -> str:
+        """Полное имя организатора"""
+        return f"{self.first_name} {self.last_name}".strip()
+
+
 class MeetingBase(BaseModel):
     title: str
     project_id: Optional[int] = None
@@ -63,6 +79,29 @@ class MeetingListOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class MeetingListOutWithOrganizer(BaseModel):
+    """Встреча со информацией об организаторе"""
+    id: int
+    title: str
+    project_id: Optional[int]
+    organizer_id: Optional[int]
+    organizer: Optional[OrganizerInfo] = None
+    meeting_date: datetime
+    duration: Optional[int]
+    comments: Optional[str]
+    created_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+    
+    @property
+    def organizer_name(self) -> Optional[str]:
+        """Полное имя организатора (удобно для отображения)"""
+        if self.organizer:
+            return self.organizer.full_name
+        return None
 
 
 class TranscriptOut(BaseModel):

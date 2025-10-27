@@ -501,3 +501,404 @@ curl "http://localhost:8000/api/meetings/?skip=20&limit=20&sort_by=date_desc" \
 ## Типы уведомлений
 
 - `
+
+## Meeting Processing Status
+
+### Получить статус обработки встречи
+
+```
+GET /api/meetings/{meeting_id}/processing-status
+```
+
+**Параметры:**
+- `meeting_id` (path): ID встречи
+
+**Авторизация:** Требуется (cookie session)
+
+**Описание:**
+Возвращает текущий статус обработки встречи (транскрибация, суммаризация, извлечение задач).
+
+**Возвращаемые поля:**
+- `meeting_id`: ID встречи
+- `status`: Статус обработки
+  - `"not_started"` - обработка еще не начиналась
+  - `"processing"` - идет обработка
+  - `"completed"` - обработка завершена успешно
+  - `"failed"` - обработка завершилась ошибкой
+- `current_stage`: Текущий этап обработки
+  - `"transcription"` - транскрибация аудио
+  - `"summarization"` - создание резюме
+  - `"action_items"` - извлечение задач
+- `progress`: Процент выполнения (0-100)
+- `error_message`: Текст ошибки (если есть)
+- `started_at`: Время начала обработки (ISO 8601)
+- `completed_at`: Время завершения обработки (ISO 8601)
+- `estimated_completion`: Приблизительное время завершения (ISO 8601)
+- `stage_info`: Описание текущего этапа на русском языке
+
+**Пример запроса:**
+```bash
+curl -X GET "http://localhost:8000/api/meetings/1/processing-status" \
+  -H "Cookie: session_id=your_session_id"
+```
+
+**Пример ответа (обработка идет):**
+```json
+{
+  "meeting_id": 1,
+  "status": "processing",
+  "current_stage": "transcription",
+  "progress": 35,
+  "error_message": null,
+  "started_at": "2025-10-27T12:00:00Z",
+  "completed_at": null,
+  "estimated_completion": "2025-10-27T12:05:30Z",
+  "stage_info": "Транскрибация аудио"
+}
+```
+
+**Пример ответа (завершено):**
+```json
+{
+  "meeting_id": 1,
+  "status": "completed",
+  "current_stage": "action_items",
+  "progress": 100,
+  "error_message": null,
+  "started_at": "2025-10-27T12:00:00Z",
+  "completed_at": "2025-10-27T12:10:45Z",
+  "estimated_completion": null,
+  "stage_info": "Извлечение задач"
+}
+```
+
+**Пример ответа (ошибка):**
+```json
+{
+  "meeting_id": 1,
+  "status": "failed",
+  "current_stage": "transcription",
+  "progress": 25,
+  "error_message": "Failed to download audio file from S3",
+  "started_at": "2025-10-27T12:00:00Z",
+  "completed_at": "2025-10-27T12:02:15Z",
+  "estimated_completion": null,
+  "stage_info": "Транскрибация аудио"
+}
+```
+
+**Пример ответа (не начиналась):**
+```json
+{
+  "meeting_id": 1,
+  "status": "not_started",
+  "current_stage": null,
+  "progress": 0,
+  "error_message": null,
+  "started_at": null,
+  "completed_at": null,
+  "estimated_completion": null,
+  "message": "Обработка еще не начиналась"
+}
+```
+
+### Этапы обработки встречи
+
+1. **Transcription (10% → 50%)**
+   - Скачивание аудио файла из S3
+   - Отправка на Whisper (локальный или OpenAI)
+   - Сохранение транскрипта с временными метками
+
+2. **Summarization (50% → 80%)**
+   - Анализ транскрипта
+   - Создание резюме встречи с помощью GPT-4
+   - Сохранение резюме в БД
+
+3. **Action Items (80% → 100%)**
+   - Извлечение задач и назначений
+   - Создание action items с описаниями
+   - Завершение обработки
+
+### Полинг статуса (Polling)
+
+Рекомендуется проверять статус каждые 2-5 секунд:
+
+```javascript
+async function checkProcessingStatus(meetingId) {
+  const response = await fetch(`/api/meetings/${meetingId}/processing-status`, {
+    method: 'GET',
+    credentials: 'include'
+  });
+  
+  const data = await response.json();
+  
+  console.log(`Status: ${data.status}`);
+  console.log(`Progress: ${data.progress}%`);
+  console.log(`Stage: ${data.stage_info}`);
+  
+  if (data.status === 'completed') {
+    console.log('✓ Обработка завершена!');
+  } else if (data.status === 'failed') {
+    console.error('✗ Ошибка:', data.error_message);
+  } else if (data.estimated_completion) {
+    const eta = new Date(data.estimated_completion);
+    console.log(`ETA: ${eta.toLocaleTimeString()}`);
+  }
+}
+
+// Проверять каждые 3 секунды
+setInterval(() => checkProcessingStatus(1), 3000);
+```
+
+### Python пример
+
+```python
+import requests
+import time
+
+def check_meeting_status(meeting_id, session_id):
+    url = f"http://localhost:8000/api/meetings/{meeting_id}/processing-status"
+    cookies = {"session_id": session_id}
+    
+    while True:
+        response = requests.get(url, cookies=cookies)
+        data = response.json()
+        
+        print(f"Status: {data['status']}")
+        print(f"Progress: {data['progress']}%")
+        print(f"Stage: {data['stage_info']}")
+        
+        if data['status'] == 'completed':
+            print("✓ Processing completed!")
+            break
+        elif data['status'] == 'failed':
+            print(f"✗ Error: {data['error_message']}")
+            break
+        
+        if data['estimated_completion']:
+            print(f"ETA: {data['estimated_completion']}")
+        
+        print("---")
+        time.sleep(3)  # Check every 3 seconds
+
+# Usage
+check_meeting_status(meeting_id=1, session_id="your_session_id")
+```
+
+### WebSocket Polling (Advanced)
+
+Для real-time обновлений рекомендуется использовать WebSocket вместо HTTP polling для уменьшения нагрузки на сервер.
+
+
+## Meeting Duration
+
+### Получить информацию о длительности встречи
+
+```
+GET /api/meetings/{meeting_id}/duration
+```
+
+**Параметры:**
+- `meeting_id` (path): ID встречи
+
+**Авторизация:** Требуется (cookie session)
+
+**Описание:**
+Возвращает информацию о длительности встречи в минутах и секундах, а также источник этой информации.
+
+**Возвращаемые поля:**
+- `meeting_id`: ID встречи
+- `duration`: Длительность в минутах (может быть null если не установлена)
+- `duration_seconds`: Длительность в секундах
+- `audio_file_size`: Размер аудиофайла в байтах
+- `source`: Источник информации
+  - `"transcription"` - определена из транскрипта
+  - `"manual"` - установлена вручную
+  - `"unknown"` - источник неизвестен
+- `processing_status`: Статус обработки встречи
+
+**Пример запроса:**
+```bash
+curl -X GET "http://localhost:8000/api/meetings/1/duration" \
+  -H "Cookie: session_id=your_session_id"
+```
+
+**Пример ответа:**
+```json
+{
+  "meeting_id": 1,
+  "duration": 45,
+  "duration_seconds": 2700,
+  "audio_file_size": 5242880,
+  "source": "transcription",
+  "processing_status": "completed"
+}
+```
+
+### Обновить длительность встречи
+
+```
+PUT /api/meetings/{meeting_id}/duration?duration_minutes=45
+```
+
+**Параметры:**
+- `meeting_id` (path): ID встречи
+- `duration_minutes` (query): Длительность в минутах (целое число, минимум 1)
+
+**Авторизация:** Требуется (только организатор встречи)
+
+**Описание:**
+Обновляет длительность встречи вручную. Может использоваться если:
+- Автоматическое определение длительности не сработало
+- Нужно исправить длительность
+- Встреча без аудиофайла
+
+**Пример запроса:**
+```bash
+curl -X PUT "http://localhost:8000/api/meetings/1/duration?duration_minutes=45" \
+  -H "Cookie: session_id=your_session_id"
+```
+
+**Пример ответа:**
+```json
+{
+  "meeting_id": 1,
+  "duration": 45,
+  "duration_seconds": 2700,
+  "previous_duration": null,
+  "message": "Duration updated successfully from None to 45 minutes"
+}
+```
+
+### Как определяется длительность
+
+1. **При загрузке встречи:**
+   - Если указана длительность в форме → используется она
+   - Иначе → остается пустой (null)
+
+2. **При обработке транскрипции:**
+   - Whisper API возвращает длительность аудио
+   - Система автоматически сохраняет её в минутах
+   - Преобразование: если > 100 секунд, делится на 60
+
+3. **Ручное обновление:**
+   - Организатор может установить длительность через PUT endpoint
+   - Минимум 1 минута, целое число
+
+
+## Users - Пользователи
+
+### Получить список пользователей с поиском
+
+```
+GET /api/users/
+```
+
+**Query parameters:**
+- `search` (string, optional): Поиск по имени (first_name), фамилии (last_name) или логину (ad_account)
+- `skip` (integer, default=0): Смещение для пагинации
+- `limit` (integer, default=100): Количество результатов на странице (max=1000)
+
+**Авторизация:** Требуется (для всех аутентифицированных пользователей)
+
+**Описание:**
+Возвращает список пользователей с поддержкой поиска и пагинации. Поиск работает по:
+- Имени (first_name)
+- Фамилии (last_name)
+- Логину AD (ad_account)
+
+**Пример запросов:**
+
+```bash
+# Все пользователи
+curl -X GET "http://localhost:8000/api/users/" \
+  -H "Cookie: session_id=your_session_id"
+
+# Поиск по имени "John"
+curl -X GET "http://localhost:8000/api/users/?search=john" \
+  -H "Cookie: session_id=your_session_id"
+
+# Поиск по фамилии "Doe"
+curl -X GET "http://localhost:8000/api/users/?search=doe" \
+  -H "Cookie: session_id=your_session_id"
+
+# Поиск по логину "jdoe"
+curl -X GET "http://localhost:8000/api/users/?search=jdoe" \
+  -H "Cookie: session_id=your_session_id"
+
+# Поиск с пагинацией
+curl -X GET "http://localhost:8000/api/users/?search=john&skip=50&limit=25" \
+  -H "Cookie: session_id=your_session_id"
+```
+
+**Пример ответа:**
+```json
+{
+  "users": [
+    {
+      "id": 1,
+      "ad_account": "jdoe",
+      "first_name": "John",
+      "last_name": "Doe",
+      "role": "Manager",
+      "is_active": true,
+      "created_at": "2025-10-27T10:00:00Z",
+      "updated_at": "2025-10-27T12:00:00Z"
+    },
+    {
+      "id": 2,
+      "ad_account": "jsmith",
+      "first_name": "John",
+      "last_name": "Smith",
+      "role": "Member",
+      "is_active": true,
+      "created_at": "2025-10-26T10:00:00Z",
+      "updated_at": "2025-10-26T12:00:00Z"
+    }
+  ],
+  "total": 2
+}
+```
+
+### Получить информацию о конкретном пользователе
+
+```
+GET /api/users/{user_id}
+```
+
+**Параметры:**
+- `user_id` (path): ID пользователя
+
+**Авторизация:** Требуется (для всех аутентифицированных пользователей)
+
+**Пример ответа:**
+```json
+{
+  "id": 1,
+  "ad_account": "jdoe",
+  "first_name": "John",
+  "last_name": "Doe",
+  "role": "Manager",
+  "is_active": true,
+  "created_at": "2025-10-27T10:00:00Z",
+  "updated_at": "2025-10-27T12:00:00Z"
+}
+```
+
+### Обновить роль пользователя
+
+```
+PUT /api/users/{user_id}/role?role=Backend%20Dev
+```
+
+**Параметры:**
+- `user_id` (path): ID пользователя
+- `role` (query): Новая роль (Member, PM, Manager, Backend Dev, Frontend Dev, Designer, QA)
+
+**Авторизация:** Требуется (только Manager)
+
+**Пример:**
+```bash
+curl -X PUT "http://localhost:8000/api/users/5/role?role=Backend%20Dev" \
+  -H "Cookie: session_id=your_session_id"
+```

@@ -1,11 +1,12 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, func
+from sqlalchemy import select, and_, or_, func, joinedload
 from typing import Optional
 from datetime import datetime
 
 from src.meetings.models import (
     Meeting, Transcript, Summary, Note, ActionItem, MeetingProcessing
 )
+from src.users.models import User
 
 
 async def get_meeting_by_id(db: AsyncSession, meeting_id: int) -> Optional[Meeting]:
@@ -210,6 +211,9 @@ async def get_meetings_with_filters(
     
     query = select(Meeting).where(and_(*filters))
     
+    # Загружаем организатора с встречей для отображения полной информации
+    query = query.options(joinedload(Meeting.organizer))
+    
     # Применить сортировку (поддерживает несколько полей через запятую)
     sort_fields = sort_by.split(",") if sort_by else ["date_desc"]
     for sort_field in sort_fields:
@@ -287,6 +291,9 @@ async def get_project_meetings_with_filters(
         filters.append(Meeting.duration <= max_duration)
     
     query = select(Meeting).where(and_(*filters))
+    
+    # Загружаем организатора с встречей для отображения полной информации
+    query = query.options(joinedload(Meeting.organizer))
     
     # Применить сортировку (поддерживает несколько полей через запятую)
     sort_fields = sort_by.split(",") if sort_by else ["date_desc"]

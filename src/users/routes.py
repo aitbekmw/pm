@@ -59,11 +59,25 @@ async def me(request: Request, db: AsyncSession = Depends(get_db)):
 async def list_users(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
+    search: str = Query(None, min_length=1, description="Поиск по имени, фамилии или логину (ad_account)"),
     current_user: UserOut = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Получает список пользователей (для всех аутентифицированных пользователей)"""
-    users, total = await services.get_users(db, skip=skip, limit=limit)
+    """Получает список пользователей (для всех аутентифицированных пользователей)
+    
+    Параметры:
+    - skip: смещение для пагинации
+    - limit: количество результатов на странице
+    - search: поиск по имени (first_name), фамилии (last_name) или логину (ad_account)
+    
+    Примеры:
+    - GET /api/users/ - все пользователи
+    - GET /api/users/?search=john - все Джоны
+    - GET /api/users/?search=doe - все с фамилией Doe
+    - GET /api/users/?search=jdoe - поиск по логину jdoe
+    - GET /api/users/?search=john&skip=50&limit=25 - пагинированный поиск
+    """
+    users, total = await services.get_users(db, skip=skip, limit=limit, search=search)
     return UserList(users=users, total=total)
 
 
