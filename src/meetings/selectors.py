@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, func, joinedload
+from sqlalchemy import select, and_, or_, func
+from sqlalchemy.orm import joinedload
 from typing import Optional
 from datetime import datetime
 
