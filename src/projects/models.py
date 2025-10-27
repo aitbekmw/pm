@@ -24,7 +24,7 @@ class ProjectAccess(Base):
     __tablename__ = "project_access"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     role: Mapped[str | None] = mapped_column(String, nullable=True)  # PM | Member | Manager | Backend Dev | Frontend Dev | Designer | QA
     granted_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)

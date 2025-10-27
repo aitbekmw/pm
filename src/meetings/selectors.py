@@ -163,12 +163,13 @@ async def get_meetings_with_filters(
     organizer_id: Optional[int] = None,
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
-    min_duration: Optional[int] = None,
-    max_duration: Optional[int] = None,
+    min_duration: Optional[float] = None,
+    max_duration: Optional[float] = None,
     sort_by: str = "date_desc",
     skip: int = 0,
-    limit: int = 50
-) -> list[Meeting]:
+    limit: int = 50,
+    return_count: bool = False
+) -> tuple[list[Meeting], int] | list[Meeting]:
     """
     Получить встречи с фильтрацией и сортировкой.
     
@@ -176,14 +177,16 @@ async def get_meetings_with_filters(
     - organizer_id: ID организатора встречи
     - start_date: начало периода
     - end_date: конец периода
-    - min_duration: минимальная длительность в минутах
-    - max_duration: максимальная длительность в минутах
+    - min_duration: минимальная длительность в минутах (поддерживает decimal)
+    - max_duration: максимальная длительность в минутах (поддерживает decimal)
     
-    Параметры сортировки (sort_by):
-    - date_desc: новые → старые (по умолчанию)
+    Параметры сортировки (sort_by - может быть несколько, разделены запятыми):
     - date_asc: старые → новые
+    - date_desc: новые → старые (по умолчанию)
     - duration_asc: от коротких → к длинным
     - duration_desc: от длинных → к коротким
+    
+    Пример: "date_desc,duration_asc"
     """
     filters = [Meeting.organizer_id == user_id]
     
@@ -207,20 +210,32 @@ async def get_meetings_with_filters(
     
     query = select(Meeting).where(and_(*filters))
     
-    # Применить сортировку
-    if sort_by == "date_asc":
-        query = query.order_by(Meeting.meeting_date.asc())
-    elif sort_by == "duration_asc":
-        query = query.order_by(Meeting.duration.asc())
-    elif sort_by == "duration_desc":
-        query = query.order_by(Meeting.duration.desc())
-    else:  # date_desc по умолчанию
-        query = query.order_by(Meeting.meeting_date.desc())
+    # Применить сортировку (поддерживает несколько полей через запятую)
+    sort_fields = sort_by.split(",") if sort_by else ["date_desc"]
+    for sort_field in sort_fields:
+        sort_field = sort_field.strip()
+        if sort_field == "date_asc":
+            query = query.order_by(Meeting.meeting_date.asc())
+        elif sort_field == "date_desc":
+            query = query.order_by(Meeting.meeting_date.desc())
+        elif sort_field == "duration_asc":
+            query = query.order_by(Meeting.duration.asc())
+        elif sort_field == "duration_desc":
+            query = query.order_by(Meeting.duration.desc())
+    
+    # Получаем общее количество до apply offset/limit
+    if return_count:
+        count_result = await db.execute(select(func.count(Meeting.id)).where(and_(*filters)))
+        total = count_result.scalar()
     
     query = query.offset(skip).limit(limit)
     
     result = await db.execute(query)
-    return list(result.scalars().all())
+    meetings = list(result.scalars().all())
+    
+    if return_count:
+        return meetings, total
+    return meetings
 
 
 async def get_project_meetings_with_filters(
@@ -229,12 +244,13 @@ async def get_project_meetings_with_filters(
     organizer_id: Optional[int] = None,
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
-    min_duration: Optional[int] = None,
-    max_duration: Optional[int] = None,
+    min_duration: Optional[float] = None,
+    max_duration: Optional[float] = None,
     sort_by: str = "date_desc",
     skip: int = 0,
-    limit: int = 50
-) -> list[Meeting]:
+    limit: int = 50,
+    return_count: bool = False
+) -> tuple[list[Meeting], int] | list[Meeting]:
     """
     Получить встречи проекта с фильтрацией и сортировкой.
     
@@ -242,14 +258,16 @@ async def get_project_meetings_with_filters(
     - organizer_id: ID организатора встречи
     - start_date: начало периода
     - end_date: конец периода
-    - min_duration: минимальная длительность в минутах
-    - max_duration: максимальная длительность в минутах
+    - min_duration: минимальная длительность в минутах (поддерживает decimal)
+    - max_duration: максимальная длительность в минутах (поддерживает decimal)
     
-    Параметры сортировки (sort_by):
-    - date_desc: новые → старые (по умолчанию)
+    Параметры сортировки (sort_by - может быть несколько, разделены запятыми):
     - date_asc: старые → новые
+    - date_desc: новые → старые (по умолчанию)
     - duration_asc: от коротких → к длинным
     - duration_desc: от длинных → к коротким
+    
+    Пример: "date_desc,duration_asc"
     """
     filters = [Meeting.project_id == project_id]
     
@@ -270,18 +288,30 @@ async def get_project_meetings_with_filters(
     
     query = select(Meeting).where(and_(*filters))
     
-    # Применить сортировку
-    if sort_by == "date_asc":
-        query = query.order_by(Meeting.meeting_date.asc())
-    elif sort_by == "duration_asc":
-        query = query.order_by(Meeting.duration.asc())
-    elif sort_by == "duration_desc":
-        query = query.order_by(Meeting.duration.desc())
-    else:  # date_desc по умолчанию
-        query = query.order_by(Meeting.meeting_date.desc())
+    # Применить сортировку (поддерживает несколько полей через запятую)
+    sort_fields = sort_by.split(",") if sort_by else ["date_desc"]
+    for sort_field in sort_fields:
+        sort_field = sort_field.strip()
+        if sort_field == "date_asc":
+            query = query.order_by(Meeting.meeting_date.asc())
+        elif sort_field == "date_desc":
+            query = query.order_by(Meeting.meeting_date.desc())
+        elif sort_field == "duration_asc":
+            query = query.order_by(Meeting.duration.asc())
+        elif sort_field == "duration_desc":
+            query = query.order_by(Meeting.duration.desc())
+    
+    # Получаем общее количество до apply offset/limit
+    if return_count:
+        count_result = await db.execute(select(func.count(Meeting.id)).where(and_(*filters)))
+        total = count_result.scalar()
     
     query = query.offset(skip).limit(limit)
     
     result = await db.execute(query)
-    return list(result.scalars().all())
+    meetings = list(result.scalars().all())
+    
+    if return_count:
+        return meetings, total
+    return meetings
 

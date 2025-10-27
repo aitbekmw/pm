@@ -62,10 +62,7 @@ async def list_users(
     current_user: UserOut = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Получает список пользователей (только для Manager)"""
-    if current_user.role != "Manager":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    
+    """Получает список пользователей (для всех аутентифицированных пользователей)"""
     users, total = await services.get_users(db, skip=skip, limit=limit)
     return UserList(users=users, total=total)
 
@@ -78,15 +75,12 @@ async def update_user_role(
     db: AsyncSession = Depends(get_db)
 ):
     """Обновляет роль пользователя (только для Manager)"""
-    updated_user = await services.update_user_role(
-        db, user_id, role_data.role, current_user
-    )
+    if current_user.role != "Manager":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     
+    updated_user = await services.update_user_role(db, user_id, role_data.role, current_user)
     if not updated_user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
-            detail="User not found or insufficient permissions"
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not update user")
     
     return updated_user
 
@@ -97,10 +91,7 @@ async def get_user(
     current_user: UserOut = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Получает информацию о пользователе по ID (только для Manager)"""
-    if current_user.role != "Manager":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    
+    """Получает информацию о пользователе по ID (для всех аутентифицированных пользователей)"""
     user = await services.get_user_by_id(db, user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")

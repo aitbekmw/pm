@@ -1,6 +1,7 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 from typing import Optional
 from datetime import datetime
+from src.core.storage import storage
 
 
 class MeetingBase(BaseModel):
@@ -41,6 +42,13 @@ class MeetingOut(BaseModel):
 
     class Config:
         from_attributes = True
+    
+    @field_serializer('audio_file_path')
+    def serialize_audio_file_path(self, value: Optional[str], _info):
+        """Генерирует полный S3 URL для аудиофайла"""
+        if value:
+            return storage.generate_presigned_url(value, expiration=3600)
+        return None
 
 
 class MeetingListOut(BaseModel):

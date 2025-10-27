@@ -19,7 +19,7 @@ class Meeting(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     title: Mapped[str] = mapped_column(String, nullable=False)
-    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=True)
     organizer_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     meeting_date: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
     duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -36,7 +36,7 @@ class MeetingProcessing(Base):
     __tablename__ = "meeting_processing"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    meeting_id: Mapped[int] = mapped_column(ForeignKey("meetings.id"), nullable=False)
+    meeting_id: Mapped[int] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False)
     status: Mapped[str | None] = mapped_column(String, nullable=True)
     current_stage: Mapped[str | None] = mapped_column(String, nullable=True)
     progress: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -49,7 +49,7 @@ class Transcript(Base):
     __tablename__ = "transcripts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    meeting_id: Mapped[int] = mapped_column(ForeignKey("meetings.id"), nullable=False)
+    meeting_id: Mapped[int] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False)
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
     timestamps: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -62,7 +62,7 @@ class Summary(Base):
     __tablename__ = "summaries"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    meeting_id: Mapped[int] = mapped_column(ForeignKey("meetings.id"), nullable=False)
+    meeting_id: Mapped[int] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False)
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(
@@ -74,7 +74,7 @@ class Note(Base):
     __tablename__ = "notes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    meeting_id: Mapped[int] = mapped_column(ForeignKey("meetings.id"), nullable=False)
+    meeting_id: Mapped[int] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False)
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -87,7 +87,7 @@ class ActionItem(Base):
     __tablename__ = "action_items"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    meeting_id: Mapped[int] = mapped_column(ForeignKey("meetings.id"), nullable=False)
+    meeting_id: Mapped[int] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False)
     title: Mapped[str | None] = mapped_column(String, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     assignee_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
@@ -104,7 +104,7 @@ class Notification(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
-    meeting_id: Mapped[int | None] = mapped_column(ForeignKey("meetings.id"), nullable=True)
+    meeting_id: Mapped[int | None] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"), nullable=True)
     type: Mapped[str | None] = mapped_column(String, nullable=True)  # processing | completed | failed
     title: Mapped[str | None] = mapped_column(String, nullable=True)
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
