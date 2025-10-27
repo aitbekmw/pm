@@ -1,6 +1,10 @@
 from openai import OpenAI
 from typing import Optional, BinaryIO
 import json
+import httpx
+import soundfile as sf
+import librosa
+from io import BytesIO
 
 from src.core.config import settings
 
@@ -8,9 +12,18 @@ from src.core.config import settings
 class AIService:
     def __init__(self):
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        self.whisper_url = settings.WHISPER_SERVER_URL
+        self.use_local_whisper = settings.USE_LOCAL_WHISPER
 
     async def transcribe_audio(self, audio_file: BinaryIO, filename: str = "audio.mp3") -> Optional[dict]:
-        """Транскрибация аудио через Whisper API"""
+        """Транскрибация аудио через Whisper (локальный сервер или OpenAI API)"""
+        if self.use_local_whisper and self.whisper_url:
+            return await self._transcribe_local_whisper(audio_file, filename)
+        else:
+            return await self._transcribe_openai_whisper(audio_file, filename)
+
+    async def _transcribe_openai_whisper(self, audio_file: BinaryIO, filename: str = "audio.mp3") -> Optional[dict]:
+        """Транскрибация через OpenAI Whisper API"""
         try:
             transcript = self.client.audio.transcriptions.create(
                 model=settings.WHISPER_MODEL,
@@ -20,7 +33,64 @@ class AIService:
             )
             return transcript.model_dump()
         except Exception as e:
-            print(f"Error transcribing audio: {e}")
+            print(f"Error transcribing audio with OpenAI: {e}")
+            return None
+
+    async def _transcribe_local_whisper(self, audio_file: BinaryIO, filename: str = "audio.mp3") -> Optional[dict]:
+        """Транскрибация через локальный Whisper сервер"""
+        try:
+            # Читаем аудио файл
+            audio_file.seek(0)
+            audio_data = audio_file.read()
+            
+            # Отправляем на Whisper сервер
+            async with httpx.AsyncClient(timeout=600) as client:
+                files = {"file": (filename, audio_data)}
+                response = await client.post(self.whisper_url, files=files)
+                response.raise_for_status()
+                
+                result = response.json()
+                
+                # Преобразуем результат локального Whisper в формат, совместимый с OpenAI
+                if isinstance(result, dict) and "text" not in result:
+                    # Если результат содержит сегменты
+                    transcript_text = ""
+                    segments = []
+                    
+                    if isinstance(result, dict) and result:
+                        # Локальный сервер может возвращать список сегментов
+                        items = result if isinstance(result, list) else result.get("segments", result.get("results", []))
+                        for item in items:
+                            if isinstance(item, dict):
+                                start = item.get("start", 0)
+                                end = item.get("end", 0)
+                                text = item.get("text", "")
+                                transcript_text += text + " "
+                                segments.append({
+                                    "id": len(segments),
+                                    "seek": 0,
+                                    "start": float(start),
+                                    "end": float(end),
+                                    "text": text,
+                                    "tokens": [],
+                                    "temperature": 0.0,
+                                    "avg_logprob": 0.0,
+                                    "compression_ratio": 0.0,
+                                    "no_speech_prob": 0.0,
+                                    "words": [{"word": text, "start": float(start), "end": float(end)}]
+                                })
+                    
+                    return {
+                        "text": transcript_text.strip(),
+                        "segments": segments,
+                        "language": "ru"
+                    }
+                else:
+                    # Если уже в формате OpenAI
+                    return result
+                    
+        except Exception as e:
+            print(f"Error transcribing audio with local Whisper: {e}")
             return None
 
     async def summarize_transcript(self, transcript_text: str, meeting_title: str = "") -> Optional[str]:

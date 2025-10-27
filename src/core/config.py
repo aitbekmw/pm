@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = Field(..., env="OPENAI_API_KEY")
     WHISPER_MODEL: str = Field(default="whisper-1", env="WHISPER_MODEL")
     GPT_MODEL: str = Field(default="gpt-4-turbo-preview", env="GPT_MODEL")
+    
+    # Whisper Transcription (Local or OpenAI)
+    WHISPER_SERVER_URL: Optional[str] = Field(default="http://10.0.10.3:8000/transcribe", env="WHISPER_SERVER_URL")
+    USE_LOCAL_WHISPER: bool = Field(default=True, env="USE_LOCAL_WHISPER")
 
     # Redis for ARQ
     REDIS_URL: str = Field(default="redis://redis:6379", env="REDIS_URL")
