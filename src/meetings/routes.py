@@ -159,11 +159,13 @@ async def get_meetings(
         previous_skip = max(0, skip - limit)
         previous_url = f"{base_url}?skip={previous_skip}&limit={limit}"
     
+    results = [schemas.MeetingListOut.from_orm(meeting) for meeting in meetings]
+ 
     return {
         "count": total,
         "next": next_url,
         "previous": previous_url,
-        "results": meetings
+        "results": results
     }
 
 
