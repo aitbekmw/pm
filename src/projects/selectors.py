@@ -72,9 +72,11 @@ async def get_project_access(
     project_id: int
 ) -> list[ProjectAccess]:
     """Получить список доступов к проекту"""
+    from sqlalchemy.orm import joinedload
     result = await db.execute(
         select(ProjectAccess)
         .where(ProjectAccess.project_id == project_id)
+        .options(joinedload(ProjectAccess.user))
     )
     return list(result.scalars().all())
 

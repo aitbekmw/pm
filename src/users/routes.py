@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Response, Request, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional
 
 from src.db.deps import get_db
 from src.users import services
@@ -53,10 +54,29 @@ async def me(request: Request, db: AsyncSession = Depends(get_db)):
     return user
 
 
+@router.get("/roles", response_model=dict)
+async def get_roles(
+    current_user = Depends(get_current_user)
+):
+    """Получить список доступных ролей в системе"""
+    available_roles = [
+        "PM",
+        "Member",
+        "Manager",
+        "Backend Dev",
+        "Frontend Dev",
+        "Designer",
+        "QA"
+    ]
+    return {
+        "roles": available_roles,
+        "count": len(available_roles)
+    }
 
 
 @router.get("/", response_model=UserList)
 async def list_users(
+    q: Optional[str] = Query(None, min_length=1, description="Поиск по имени, фамилии или логину (ad_account) - альтернатива параметру search"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     search: str = Query(None, min_length=1, description="Поиск по имени, фамилии или логину (ad_account)"),
@@ -66,18 +86,20 @@ async def list_users(
     """Получает список пользователей (для всех аутентифицированных пользователей)
     
     Параметры:
+    - q или search: поиск по имени (first_name), фамилии (last_name) или логину (ad_account)
     - skip: смещение для пагинации
     - limit: количество результатов на странице
-    - search: поиск по имени (first_name), фамилии (last_name) или логину (ad_account)
     
     Примеры:
     - GET /api/users/ - все пользователи
-    - GET /api/users/?search=john - все Джоны
+    - GET /api/users/?q=john - все Джоны
     - GET /api/users/?search=doe - все с фамилией Doe
-    - GET /api/users/?search=jdoe - поиск по логину jdoe
-    - GET /api/users/?search=john&skip=50&limit=25 - пагинированный поиск
+    - GET /api/users/?q=jdoe - поиск по логину jdoe
+    - GET /api/users/?q=john&skip=50&limit=25 - пагинированный поиск
     """
-    users, total = await services.get_users(db, skip=skip, limit=limit, search=search)
+    # Используем q если передан, иначе используем search
+    search_query = q or search
+    users, total = await services.get_users(db, skip=skip, limit=limit, search=search_query)
     return UserList(users=users, total=total)
 
 

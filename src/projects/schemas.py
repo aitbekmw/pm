@@ -52,6 +52,34 @@ class ProjectAccessOut(ProjectAccessBase):
         from_attributes = True
 
 
+class UserAccessInfo(BaseModel):
+    """Информация о пользователе для доступа к проекту"""
+    id: int
+    ad_account: str  # username
+    first_name: str
+    last_name: str
+    role: str
+
+    class Config:
+        from_attributes = True
+    
+    @property
+    def full_name(self) -> str:
+        """Полное имя пользователя"""
+        return f"{self.first_name} {self.last_name}".strip()
+
+
+class ProjectAccessOutWithUser(ProjectAccessBase):
+    """Доступ к проекту с информацией о пользователе"""
+    id: int
+    project_id: int
+    user: Optional[UserAccessInfo] = None
+    granted_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
 class ProjectListOut(BaseModel):
     id: int
     name: str

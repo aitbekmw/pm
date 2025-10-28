@@ -233,7 +233,7 @@ async def grant_access(
     return access
 
 
-@router.get("/{project_id}/access", response_model=List[schemas.ProjectAccessOut])
+@router.get("/{project_id}/access", response_model=List[schemas.ProjectAccessOutWithUser])
 async def get_project_access(
     project_id: int,
     current_user: User = Depends(get_current_user),

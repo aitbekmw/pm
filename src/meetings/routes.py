@@ -62,6 +62,7 @@ async def create_meeting(
 
 @router.get("/", response_model=dict)
 async def get_meetings(
+    q: Optional[str] = Query(None, min_length=1, description="Поиск по названию встречи"),
     project_id: Optional[int] = Query(None),
     organizer_id: Optional[int] = Query(None),
     start_date: Optional[datetime] = Query(None),
@@ -79,6 +80,7 @@ async def get_meetings(
     Получить список встреч с фильтрацией и сортировкой.
     
     Фильтрация по:
+    - q: поиск по названию встречи
     - project_id: ID проекта
     - organizer_id: ID организатора встречи
     - start_date: начало периода (ISO 8601 формат)
@@ -120,6 +122,7 @@ async def get_meetings(
         meetings, total = await selectors.get_project_meetings_with_filters(
             db, 
             project_id,
+            search_query=q,
             organizer_id=organizer_id,
             start_date=start_date,
             end_date=end_date,
@@ -134,6 +137,7 @@ async def get_meetings(
         meetings, total = await selectors.get_meetings_with_filters(
             db,
             current_user.id,
+            search_query=q,
             project_id=project_id,
             organizer_id=organizer_id,
             start_date=start_date,
@@ -170,7 +174,7 @@ async def get_meetings(
     }
 
 
-@router.get("/uncategorized", response_model=List[schemas.MeetingListOut])
+@router.get("/uncategorized", response_model=List[schemas.MeetingListOutWithOrganizer])
 async def get_uncategorized_meetings(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),

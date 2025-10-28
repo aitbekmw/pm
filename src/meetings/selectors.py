@@ -48,6 +48,7 @@ async def get_uncategorized_meetings(
                 Meeting.organizer_id == user_id
             )
         )
+        .options(joinedload(Meeting.organizer))
         .order_by(Meeting.meeting_date.desc())
         .offset(skip)
         .limit(limit)
@@ -161,6 +162,7 @@ async def search_meetings(
 async def get_meetings_with_filters(
     db: AsyncSession,
     user_id: int,
+    search_query: Optional[str] = None,
     project_id: Optional[int] = None,
     organizer_id: Optional[int] = None,
     start_date: Optional[datetime] = None,
@@ -176,6 +178,7 @@ async def get_meetings_with_filters(
     Получить встречи с фильтрацией и сортировкой.
     
     Параметры фильтрации:
+    - search_query: поиск по названию встречи
     - organizer_id: ID организатора встречи
     - start_date: начало периода
     - end_date: конец периода
@@ -191,6 +194,9 @@ async def get_meetings_with_filters(
     Пример: "date_desc,duration_asc"
     """
     filters = [Meeting.organizer_id == user_id]
+    
+    if search_query:
+        filters.append(Meeting.title.ilike(f"%{search_query}%"))
     
     if project_id is not None:
         filters.append(Meeting.project_id == project_id)
@@ -246,6 +252,7 @@ async def get_meetings_with_filters(
 async def get_project_meetings_with_filters(
     db: AsyncSession,
     project_id: int,
+    search_query: Optional[str] = None,
     organizer_id: Optional[int] = None,
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
@@ -260,6 +267,7 @@ async def get_project_meetings_with_filters(
     Получить встречи проекта с фильтрацией и сортировкой.
     
     Параметры фильтрации:
+    - search_query: поиск по названию встречи
     - organizer_id: ID организатора встречи
     - start_date: начало периода
     - end_date: конец периода
@@ -275,6 +283,9 @@ async def get_project_meetings_with_filters(
     Пример: "date_desc,duration_asc"
     """
     filters = [Meeting.project_id == project_id]
+    
+    if search_query:
+        filters.append(Meeting.title.ilike(f"%{search_query}%"))
     
     if organizer_id is not None:
         filters.append(Meeting.organizer_id == organizer_id)
