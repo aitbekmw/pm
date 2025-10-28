@@ -37,9 +37,12 @@ async def create_meeting(
         
         storage.upload_file(audio_file, audio_path)
     
+    # Если project_id равен 0, преобразуем в None (нет проекта)
+    project_id = data.project_id if data.project_id and data.project_id > 0 else None
+    
     meeting = Meeting(
         title=data.title,
-        project_id=data.project_id,
+        project_id=project_id,
         organizer_id=user_id,
         meeting_date=data.meeting_date or datetime.now(timezone.utc),
         comments=data.comments,

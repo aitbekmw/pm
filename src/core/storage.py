@@ -6,8 +6,11 @@ import io
 from datetime import datetime, timedelta
 import librosa
 import soundfile as sf
+import logging
 
 from src.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class S3Storage:
@@ -30,22 +33,33 @@ class S3Storage:
                 file_obj.seek(0)
                 audio_bytes = file_obj.read()
                 
-                try:
-                    # Загружаем аудио
-                    audio_data, sr = librosa.load(io.BytesIO(audio_bytes), sr=16000, mono=True)
-                    
-                    # Сохраняем в WAV формат
-                    wav_buffer = io.BytesIO()
-                    sf.write(wav_buffer, audio_data, sr, format='WAV')
-                    wav_buffer.seek(0)
-                    file_obj = wav_buffer
-                    content_type = "audio/wav"
-                    
-                    # Обновляем имя файла на .wav
-                    object_name = object_name.rsplit('.', 1)[0] + '.wav'
-                except Exception as e:
-                    print(f"Предупреждение: не удалось конвертировать аудио в WAV, загружаем оригинальный файл: {e}")
+                # Проверяем размер файла
+                if len(audio_bytes) == 0:
+                    logger.warning(f"Audio file is empty, skipping conversion: {object_name}")
                     file_obj.seek(0)
+                elif len(audio_bytes) > 100 * 1024 * 1024:  # 100MB limit
+                    logger.warning(f"Audio file too large ({len(audio_bytes)} bytes), skipping conversion: {object_name}")
+                    file_obj.seek(0)
+                else:
+                    try:
+                        logger.info(f"Converting audio to WAV: {object_name} (size: {len(audio_bytes)} bytes)")
+                        # Загружаем аудио
+                        audio_data, sr = librosa.load(io.BytesIO(audio_bytes), sr=16000, mono=True)
+                        
+                        # Сохраняем в WAV формат
+                        wav_buffer = io.BytesIO()
+                        sf.write(wav_buffer, audio_data, sr, format='WAV')
+                        wav_buffer.seek(0)
+                        file_obj = wav_buffer
+                        content_type = "audio/wav"
+                        
+                        # Обновляем имя файла на .wav
+                        object_name = object_name.rsplit('.', 1)[0] + '.wav'
+                        logger.info(f"Audio conversion successful: {object_name}")
+                    except Exception as e:
+                        logger.warning(f"Failed to convert audio to WAV, uploading original file: {e}")
+                        file_obj = io.BytesIO(audio_bytes)
+                        file_obj.seek(0)
             
             self.s3_client.upload_fileobj(
                 file_obj,
@@ -53,9 +67,10 @@ class S3Storage:
                 object_name,
                 ExtraArgs={'ContentType': content_type}
             )
+            logger.info(f"File uploaded successfully to S3: {object_name}")
             return True
         except ClientError as e:
-            print(f"Error uploading file: {e}")
+            logger.error(f"Error uploading file to S3: {e}")
             return False
 
     def download_file(self, object_name: str) -> Optional[bytes]:
@@ -64,16 +79,17 @@ class S3Storage:
             response = self.s3_client.get_object(Bucket=self.bucket_name, Key=object_name)
             return response['Body'].read()
         except ClientError as e:
-            print(f"Error downloading file: {e}")
+            logger.error(f"Error downloading file from S3: {e}")
             return None
 
     def delete_file(self, object_name: str) -> bool:
         """Удалить файл из S3"""
         try:
             self.s3_client.delete_object(Bucket=self.bucket_name, Key=object_name)
+            logger.info(f"File deleted from S3: {object_name}")
             return True
         except ClientError as e:
-            print(f"Error deleting file: {e}")
+            logger.error(f"Error deleting file from S3: {e}")
             return False
 
     def generate_presigned_url(self, object_name: str, expiration: int = 3600) -> Optional[str]:
@@ -84,9 +100,10 @@ class S3Storage:
                 Params={'Bucket': self.bucket_name, 'Key': object_name},
                 ExpiresIn=expiration
             )
+            logger.debug(f"Presigned URL generated for: {object_name}")
             return url
         except ClientError as e:
-            print(f"Error generating presigned URL: {e}")
+            logger.error(f"Error generating presigned URL: {e}")
             return None
 
     def file_exists(self, object_name: str) -> bool:
