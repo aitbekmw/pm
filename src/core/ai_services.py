@@ -3,8 +3,11 @@ from typing import Optional, BinaryIO
 import json
 import httpx
 from io import BytesIO
+import logging
 
 from src.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class AIService:
@@ -34,7 +37,7 @@ class AIService:
             )
             return transcript.model_dump()
         except Exception as e:
-            print(f"Error transcribing audio with OpenAI: {e}")
+            logger.error(f"Error transcribing audio with OpenAI: {e}")
             return None
 
     async def _transcribe_local_whisper(self, audio_file: BinaryIO, filename: str = "audio.mp3") -> Optional[dict]:
@@ -97,12 +100,16 @@ class AIService:
                 }
                     
         except Exception as e:
-            print(f"Error transcribing audio with local Whisper: {e}")
+            logger.error(f"Error transcribing audio with local Whisper: {e}")
             return None
 
     async def summarize_transcript(self, transcript_text: str, meeting_title: str = "") -> Optional[str]:
         """Суммаризация транскрипта через ChatGPT"""
         try:
+            if not transcript_text or not transcript_text.strip():
+                logger.warning("transcript_text is empty")
+                return "Нет текста для суммаризации"
+            
             prompt = f"""Ты - ассистент для менеджеров проектов. Проанализируй транскрипт встречи и создай краткое резюме.
 
 Название встречи: {meeting_title if meeting_title else "Без названия"}
@@ -118,6 +125,7 @@ class AIService:
 
 Ответ должен быть на русском языке, структурированным и кратким (не более 500 слов)."""
 
+            logger.info(f"Sending summarization request to {settings.GPT_MODEL}...")
             response = self.client.chat.completions.create(
                 model=settings.GPT_MODEL,
                 messages=[
@@ -127,14 +135,19 @@ class AIService:
                 temperature=1,
                 max_completion_tokens=1000
             )
+            logger.info("Summarization response received successfully")
             return response.choices[0].message.content
         except Exception as e:
-            print(f"Error summarizing transcript: {e}")
+            logger.error(f"Error summarizing transcript: {e}", exc_info=True)
             return None
 
     async def extract_action_items(self, transcript_text: str) -> Optional[list[dict]]:
         """Извлечение action items из транскрипта"""
         try:
+            if not transcript_text or not transcript_text.strip():
+                logger.warning("transcript_text is empty for action items extraction")
+                return []
+            
             prompt = f"""Проанализируй транскрипт встречи и извлеки все задачи (action items) и договоренности.
 
 Транскрипт:
@@ -153,6 +166,7 @@ class AIService:
 
 Если задач нет, верни пустой массив: []"""
 
+            logger.info(f"Sending action items extraction request to {settings.GPT_MODEL}...")
             response = self.client.chat.completions.create(
                 model=settings.GPT_MODEL,
                 messages=[
@@ -164,6 +178,7 @@ class AIService:
                 response_format={"type": "json_object"}
             )
             
+            logger.info("Action items response received successfully")
             result = json.loads(response.choices[0].message.content)
             # ChatGPT может вернуть объект с ключом "action_items" или массив напрямую
             if isinstance(result, dict) and "action_items" in result:
@@ -173,7 +188,7 @@ class AIService:
             else:
                 return []
         except Exception as e:
-            print(f"Error extracting action items: {e}")
+            logger.error(f"Error extracting action items: {e}", exc_info=True)
             return []
 
 

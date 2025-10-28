@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import io
+import logging
 
 from src.db.session import AsyncSessionLocal
 from src.meetings.models import Meeting, MeetingProcessing, Transcript, Summary
@@ -10,6 +11,8 @@ from src.core.ai_services import ai_service
 from src.meetings import selectors
 from arq.connections import RedisSettings
 from src.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 async def process_meeting(ctx, meeting_id: int):
@@ -103,7 +106,7 @@ async def process_meeting(ctx, meeting_id: int):
                             duration_minutes = duration_minutes / 60
                         
                         meeting.duration = int(round(duration_minutes))
-                        print(f"Updated meeting duration: {meeting.duration} minutes (from {duration})")
+                        logger.info(f"Updated meeting duration: {meeting.duration} minutes (from {duration})")
                         await db.commit()
             
             # Шаг 2: Суммаризация
@@ -111,10 +114,15 @@ async def process_meeting(ctx, meeting_id: int):
             processing.progress = 60
             await db.commit()
             
+            logger.info(f"Starting summarization for meeting {meeting_id}...")
+            logger.debug(f"Transcript length: {len(transcript_text)} characters")
+            
             summary_text = await ai_service.summarize_transcript(
                 transcript_text,
                 meeting.title
             )
+            
+            logger.debug(f"Summarization result: {summary_text[:100] if summary_text else 'None'}...")
             
             if not summary_text:
                 raise Exception("Summarization failed")
@@ -159,6 +167,7 @@ async def process_meeting(ctx, meeting_id: int):
             processing.completed_at = datetime.now(timezone.utc)
             await db.commit()
             
+            logger.info(f"Meeting {meeting_id} processing completed successfully")
             return {
                 "success": True,
                 "meeting_id": meeting_id,
@@ -168,6 +177,7 @@ async def process_meeting(ctx, meeting_id: int):
             
         except Exception as e:
             # Обработка ошибок
+            logger.error(f"Error processing meeting {meeting_id}: {e}", exc_info=True)
             processing.status = "failed"
             processing.error_message = str(e)
             processing.completed_at = datetime.now(timezone.utc)
