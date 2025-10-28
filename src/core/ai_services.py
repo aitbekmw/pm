@@ -124,7 +124,7 @@ class AIService:
                     {"role": "system", "content": "Ты - профессиональный ассистент для менеджеров проектов. Твоя задача - создавать краткие и структурированные резюме встреч на русском языке."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,
+                temperature=1,
                 max_completion_tokens=1000
             )
             return response.choices[0].message.content
@@ -159,7 +159,7 @@ class AIService:
                     {"role": "system", "content": "Ты - ассистент для извлечения задач из транскриптов встреч. Отвечай ТОЛЬКО валидным JSON."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.2,
+                temperature=1,
                 max_completion_tokens=800,
                 response_format={"type": "json_object"}
             )
