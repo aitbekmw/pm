@@ -125,7 +125,7 @@ class AIService:
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.3,
-                max_tokens=1000
+                max_completion_tokens=1000
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -160,7 +160,7 @@ class AIService:
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.2,
-                max_tokens=800,
+                max_completion_tokens=800,
                 response_format={"type": "json_object"}
             )
             
