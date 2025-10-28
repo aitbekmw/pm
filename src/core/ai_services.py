@@ -53,42 +53,48 @@ class AIService:
                 result = response.json()
                 
                 # Преобразуем результат локального Whisper в формат, совместимый с OpenAI
-                if isinstance(result, dict) and "text" not in result:
-                    # Если результат содержит сегменты
-                    transcript_text = ""
-                    segments = []
-                    
-                    if isinstance(result, dict) and result:
-                        # Локальный сервер может возвращать список сегментов
-                        items = result if isinstance(result, list) else result.get("segments", result.get("results", []))
-                        for item in items:
-                            if isinstance(item, dict):
-                                start = item.get("start", 0)
-                                end = item.get("end", 0)
-                                text = item.get("text", "")
-                                transcript_text += text + " "
-                                segments.append({
-                                    "id": len(segments),
-                                    "seek": 0,
-                                    "start": float(start),
-                                    "end": float(end),
-                                    "text": text,
-                                    "tokens": [],
-                                    "temperature": 0.0,
-                                    "avg_logprob": 0.0,
-                                    "compression_ratio": 0.0,
-                                    "no_speech_prob": 0.0,
-                                    "words": [{"word": text, "start": float(start), "end": float(end)}]
-                                })
-                    
-                    return {
-                        "text": transcript_text.strip(),
-                        "segments": segments,
-                        "language": "ru"
-                    }
-                else:
-                    # Если уже в формате OpenAI
+                # Если результат уже в правильном формате (содержит 'text')
+                if isinstance(result, dict) and "text" in result:
                     return result
+                
+                # Иначе, нужно преобразовать результат
+                transcript_text = ""
+                segments = []
+                
+                # Обработка списка сегментов
+                items = []
+                if isinstance(result, list):
+                    items = result
+                elif isinstance(result, dict):
+                    items = result.get("segments", result.get("results", []))
+                
+                # Если items - это список, обрабатываем каждый элемент
+                if isinstance(items, list):
+                    for item in items:
+                        if isinstance(item, dict):
+                            start = item.get("start", 0)
+                            end = item.get("end", 0)
+                            text = item.get("text", "")
+                            transcript_text += text + " "
+                            segments.append({
+                                "id": len(segments),
+                                "seek": 0,
+                                "start": float(start),
+                                "end": float(end),
+                                "text": text,
+                                "tokens": [],
+                                "temperature": 0.0,
+                                "avg_logprob": 0.0,
+                                "compression_ratio": 0.0,
+                                "no_speech_prob": 0.0,
+                                "words": [{"word": text, "start": float(start), "end": float(end)}]
+                            })
+                
+                return {
+                    "text": transcript_text.strip(),
+                    "segments": segments,
+                    "language": "ru"
+                }
                     
         except Exception as e:
             print(f"Error transcribing audio with local Whisper: {e}")

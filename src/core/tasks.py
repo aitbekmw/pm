@@ -72,7 +72,14 @@ async def process_meeting(ctx, meeting_id: int):
             await db.commit()
             
             # Сохранить транскрипт
+            # Убеждаемся, что transcript_data - это словарь
+            if not isinstance(transcript_data, dict):
+                raise Exception(f"Invalid transcript data format: expected dict, got {type(transcript_data)}")
+            
             transcript_text = transcript_data.get('text', '')
+            if not transcript_text:
+                raise Exception("Transcript text is empty")
+            
             transcript_obj = Transcript(
                 meeting_id=meeting_id,
                 content=transcript_text,
@@ -132,15 +139,18 @@ async def process_meeting(ctx, meeting_id: int):
             
             if action_items:
                 from src.meetings.models import ActionItem
-                for item in action_items:
-                    action_item = ActionItem(
-                        meeting_id=meeting_id,
-                        title=item.get('title', 'Untitled'),
-                        description=item.get('description'),
-                        status='pending'
-                    )
-                    db.add(action_item)
-                await db.commit()
+                # Убеждаемся, что action_items - это список
+                if isinstance(action_items, list):
+                    for item in action_items:
+                        if isinstance(item, dict):
+                            action_item = ActionItem(
+                                meeting_id=meeting_id,
+                                title=item.get('title', 'Untitled'),
+                                description=item.get('description'),
+                                status='pending'
+                            )
+                            db.add(action_item)
+                    await db.commit()
             
             # Завершить обработку
             processing.status = "completed"
