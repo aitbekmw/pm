@@ -2,12 +2,9 @@ from openai import OpenAI
 from typing import Optional, BinaryIO
 import json
 import httpx
-import soundfile as sf
-import librosa
 from io import BytesIO
 
 from src.core.config import settings
-from src.core.audio_preprocessor import audio_preprocessor
 
 
 class AIService:
@@ -28,25 +25,10 @@ class AIService:
         try:
             # Читаем аудио
             audio_file.seek(0)
-            audio_bytes = audio_file.read()
-            
-            # Применяем предобработку
-            processed_audio = audio_preprocessor.load_audio_safe(audio_bytes)
-            if processed_audio is None:
-                print("Предупреждение: не удалось предварительно обработать аудио, пытаемся отправить оригинальный файл")
-                audio_file.seek(0)
-                audio_to_send = audio_file
-            else:
-                audio_data, sr = processed_audio
-                # Сохраняем обработанное аудио в буфер
-                audio_buffer = BytesIO()
-                sf.write(audio_buffer, audio_data, sr, format='WAV')
-                audio_buffer.seek(0)
-                audio_to_send = audio_buffer
             
             transcript = self.client.audio.transcriptions.create(
                 model=settings.WHISPER_MODEL,
-                file=(filename.replace('.mp3', '.wav'), audio_to_send),
+                file=(filename.replace('.mp3', '.wav'), audio_file),
                 response_format="verbose_json",
                 timestamp_granularities=["word", "segment"]
             )
@@ -62,22 +44,9 @@ class AIService:
             audio_file.seek(0)
             audio_bytes = audio_file.read()
             
-            # Применяем предобработку
-            processed_audio = audio_preprocessor.load_audio_safe(audio_bytes)
-            if processed_audio is None:
-                print("Предупреждение: не удалось предварительно обработать аудио, пытаемся отправить оригинальный файл")
-                audio_data = audio_bytes
-            else:
-                audio_data, sr = processed_audio
-                # Сохраняем обработанное аудио в буфер
-                audio_buffer = BytesIO()
-                sf.write(audio_buffer, audio_data, sr, format='WAV')
-                audio_buffer.seek(0)
-                audio_data = audio_buffer.getvalue()
-            
             # Отправляем на Whisper сервер
             async with httpx.AsyncClient(timeout=600) as client:
-                files = {"file": (filename.replace('.mp3', '.wav'), audio_data)}
+                files = {"file": (filename.replace('.mp3', '.wav'), audio_bytes)}
                 response = await client.post(self.whisper_url, files=files)
                 response.raise_for_status()
                 

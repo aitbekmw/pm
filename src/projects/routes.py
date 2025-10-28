@@ -206,7 +206,7 @@ async def delete_project(
         )
 
 
-@router.post("/{project_id}/access", response_model=schemas.ProjectAccessOut)
+@router.post("/{project_id}/access", response_model=schemas.ProjectAccessOutWithUser)
 async def grant_access(
     project_id: int,
     data: schemas.ProjectAccessCreate,

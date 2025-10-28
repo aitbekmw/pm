@@ -28,7 +28,7 @@ async def create_meeting(
     
     if audio_file:
         file_extension = audio_filename.split('.')[-1] if audio_filename else 'mp3'
-        audio_path = f"meetings/{uuid.uuid4()}.{file_extension}"
+        audio_path = f"meetings/{uuid.uuid4()}.wav"
         
         # Загрузить в S3
         audio_file.seek(0, 2)  # Перейти в конец файла

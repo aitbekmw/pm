@@ -4,6 +4,8 @@ from botocore.exceptions import ClientError
 from typing import Optional, BinaryIO
 import io
 from datetime import datetime, timedelta
+import librosa
+import soundfile as sf
 
 from src.core.config import settings
 
@@ -23,6 +25,28 @@ class S3Storage:
     def upload_file(self, file_obj: BinaryIO, object_name: str, content_type: str = "audio/mpeg") -> bool:
         """Загрузить файл в S3"""
         try:
+            # Если это аудиофайл (начинается с meetings/), конвертируем в WAV
+            if object_name.startswith("meetings/"):
+                file_obj.seek(0)
+                audio_bytes = file_obj.read()
+                
+                try:
+                    # Загружаем аудио
+                    audio_data, sr = librosa.load(io.BytesIO(audio_bytes), sr=16000, mono=True)
+                    
+                    # Сохраняем в WAV формат
+                    wav_buffer = io.BytesIO()
+                    sf.write(wav_buffer, audio_data, sr, format='WAV')
+                    wav_buffer.seek(0)
+                    file_obj = wav_buffer
+                    content_type = "audio/wav"
+                    
+                    # Обновляем имя файла на .wav
+                    object_name = object_name.rsplit('.', 1)[0] + '.wav'
+                except Exception as e:
+                    print(f"Предупреждение: не удалось конвертировать аудио в WAV, загружаем оригинальный файл: {e}")
+                    file_obj.seek(0)
+            
             self.s3_client.upload_fileobj(
                 file_obj,
                 self.bucket_name,
