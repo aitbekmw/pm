@@ -29,6 +29,8 @@ class AIService:
 
     async def _transcribe_openai_whisper(self, audio_file: BinaryIO, filename: str = "audio.mp3") -> Optional[dict]:
         """Транскрибация через OpenAI Whisper API"""
+        wav_path = None
+        tmp_path = None
         try:
             # Читаем аудио используя soundfile
             audio_file.seek(0)
@@ -58,12 +60,14 @@ class AIService:
                         timestamp_granularities=["word", "segment"]
                     )
                 
-                os.unlink(wav_path)
+                if wav_path and os.path.exists(wav_path):
+                    os.unlink(wav_path)
                 result = transcript.model_dump()
                 logger.debug(f"OpenAI Whisper response keys: {result.keys() if isinstance(result, dict) else 'not a dict'}")
                 return result
             finally:
-                os.unlink(tmp_path)
+                if tmp_path and os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
                 
         except Exception as e:
             logger.error(f"Error transcribing audio with OpenAI: {e}")
@@ -71,6 +75,8 @@ class AIService:
 
     async def _transcribe_local_whisper(self, audio_file: BinaryIO, filename: str = "audio.mp3") -> Optional[dict]:
         """Транскрибация через локальный Whisper сервер"""
+        wav_path = None
+        tmp_path = None
         try:
             # Читаем аудио файл
             audio_file.seek(0)
@@ -159,8 +165,9 @@ class AIService:
                     }
                     
             finally:
-                os.unlink(tmp_path)
-                if os.path.exists(wav_path):
+                if tmp_path and os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+                if wav_path and os.path.exists(wav_path):
                     os.unlink(wav_path)
                     
         except Exception as e:

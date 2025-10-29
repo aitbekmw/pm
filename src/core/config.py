@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, ConfigDict
 from typing import Optional
 
 class Settings(BaseSettings):
@@ -52,8 +52,6 @@ class Settings(BaseSettings):
     # Redis for ARQ
     REDIS_URL: str = Field(default="redis://redis:6379", env="REDIS_URL")
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    model_config = ConfigDict(env_file=".env", case_sensitive=False)
 
 settings = Settings()
