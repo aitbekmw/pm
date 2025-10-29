@@ -32,25 +32,33 @@ class AIService:
         wav_path = None
         tmp_path = None
         try:
-            # Читаем аудио используя soundfile
+            # Читаем аудио файл
             audio_file.seek(0)
             audio_bytes = audio_file.read()
             
-            # Создаем временный файл для soundfile чтения
-            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
+            # Создаем временный файл для сохранения исходного аудио
+            with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
                 tmp_path = tmp_file.name
                 tmp_file.write(audio_bytes)
             
             try:
-                # Читаем аудио с помощью soundfile
-                data, samplerate = sf.read(tmp_path)
-                logger.info(f"Audio loaded successfully: samplerate={samplerate}, shape={data.shape}")
+                # Используем librosa для универсального чтения аудио (поддерживает MP3, WAV, FLAC, etc.)
+                import librosa
+                data, samplerate = librosa.load(tmp_path, sr=None, mono=True)
+                logger.info(f"Audio loaded with librosa: samplerate={samplerate}, shape={data.shape}")
                 
-                # Преобразуем обратно в bytes для отправки
+                # Преобразуем в WAV формат для отправки на OpenAI
                 with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_wav:
                     wav_path = tmp_wav.name
                 
-                sf.write(wav_path, data, samplerate)
+                # Убеждаемся, что данные в правильном формате для soundfile (float32 и в диапазоне [-1, 1])
+                data = np.asarray(data, dtype=np.float32)
+                max_val = np.max(np.abs(data))
+                if max_val > 0:
+                    data = data / max_val
+                
+                sf.write(wav_path, data, samplerate, format='WAV', subtype='PCM_16')
+                logger.info(f"WAV file written successfully: {wav_path}")
                 
                 with open(wav_path, 'rb') as wav_file:
                     transcript = self.client.audio.transcriptions.create(
@@ -70,7 +78,7 @@ class AIService:
                     os.unlink(tmp_path)
                 
         except Exception as e:
-            logger.error(f"Error transcribing audio with OpenAI: {e}")
+            logger.error(f"Error transcribing audio with OpenAI: {e}", exc_info=True)
             return None
 
     async def _transcribe_local_whisper(self, audio_file: BinaryIO, filename: str = "audio.mp3") -> Optional[dict]:
@@ -82,15 +90,16 @@ class AIService:
             audio_file.seek(0)
             audio_bytes = audio_file.read()
             
-            # Создаем временный файл для soundfile чтения
-            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
+            # Создаем временный файл для сохранения исходного аудио
+            with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
                 tmp_path = tmp_file.name
                 tmp_file.write(audio_bytes)
             
             try:
-                # Читаем аудио с помощью soundfile для валидации
-                data, samplerate = sf.read(tmp_path)
-                logger.info(f"Audio validated: samplerate={samplerate}, duration={len(data)/samplerate:.2f}s, channels={1 if len(data.shape)==1 else data.shape[1]}")
+                # Используем librosa для универсального чтения аудио (поддерживает MP3, WAV, FLAC, etc.)
+                import librosa
+                data, samplerate = librosa.load(tmp_path, sr=None, mono=False)
+                logger.info(f"Audio loaded with librosa: samplerate={samplerate}, duration={len(data)/samplerate:.2f}s if mono else dur={(len(data[0])/samplerate if isinstance(data, np.ndarray) and len(data.shape) > 1 else len(data)/samplerate):.2f}s")
                 
                 # Переписываем в единый формат для Whisper (mono, 16kHz)
                 with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_wav:
@@ -103,11 +112,17 @@ class AIService:
                 # Переискателируем если нужно
                 target_sr = 16000
                 if samplerate != target_sr:
-                    from librosa import resample
-                    data = resample(data, orig_sr=samplerate, target_sr=target_sr)
+                    data = librosa.resample(data, orig_sr=samplerate, target_sr=target_sr)
                     samplerate = target_sr
                 
-                sf.write(wav_path, data, samplerate, format='WAV')
+                # Убеждаемся, что данные в правильном формате для soundfile (float32 и в диапазоне [-1, 1])
+                data = np.asarray(data, dtype=np.float32)
+                max_val = np.max(np.abs(data))
+                if max_val > 0:
+                    data = data / max_val
+                
+                sf.write(wav_path, data, samplerate, format='WAV', subtype='PCM_16')
+                logger.info(f"WAV file written successfully: {wav_path}")
                 
                 # Отправляем на Whisper сервер
                 with open(wav_path, 'rb') as wav_file:
@@ -171,7 +186,7 @@ class AIService:
                     os.unlink(wav_path)
                     
         except Exception as e:
-            logger.error(f"Error transcribing audio with local Whisper: {e}")
+            logger.error(f"Error transcribing audio with local Whisper: {e}", exc_info=True)
             return None
 
     async def summarize_transcript(self, transcript_text: str, meeting_title: str = "") -> Optional[str]:
