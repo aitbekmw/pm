@@ -143,7 +143,9 @@ class AIService:
                 max_completion_tokens=1000
             )
 
-            return response.choices[0].message.content
+            result = response.choices[0].message.content
+            logger.info(f"Summarization completed successfully, result length: {len(result) if result else 0}")
+            return result
 
         except Exception as e:
             logger.error(f"Error summarizing transcript: {e}", exc_info=True)
@@ -183,6 +185,7 @@ class AIService:
             )
 
             result = json.loads(response.choices[0].message.content)
+            logger.info(f"Action items extraction completed, extracted {len(result) if isinstance(result, list) else len(result.get('action_items', []))} items")
 
             if isinstance(result, dict) and "action_items" in result:
                 return result["action_items"]
