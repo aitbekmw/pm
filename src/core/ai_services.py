@@ -4,6 +4,10 @@ import json
 import httpx
 from io import BytesIO
 import logging
+import soundfile as sf
+import numpy as np
+import tempfile
+import os
 
 from src.core.config import settings
 
@@ -26,18 +30,41 @@ class AIService:
     async def _transcribe_openai_whisper(self, audio_file: BinaryIO, filename: str = "audio.mp3") -> Optional[dict]:
         """Транскрибация через OpenAI Whisper API"""
         try:
-            # Читаем аудио
+            # Читаем аудио используя soundfile
             audio_file.seek(0)
+            audio_bytes = audio_file.read()
             
-            transcript = self.client.audio.transcriptions.create(
-                model=settings.WHISPER_MODEL,
-                file=(filename.replace('.mp3', '.wav'), audio_file),
-                response_format="verbose_json",
-                timestamp_granularities=["word", "segment"]
-            )
-            result = transcript.model_dump()
-            logger.debug(f"OpenAI Whisper response keys: {result.keys() if isinstance(result, dict) else 'not a dict'}")
-            return result
+            # Создаем временный файл для soundfile чтения
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
+                tmp_path = tmp_file.name
+                tmp_file.write(audio_bytes)
+            
+            try:
+                # Читаем аудио с помощью soundfile
+                data, samplerate = sf.read(tmp_path)
+                logger.info(f"Audio loaded successfully: samplerate={samplerate}, shape={data.shape}")
+                
+                # Преобразуем обратно в bytes для отправки
+                with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_wav:
+                    wav_path = tmp_wav.name
+                
+                sf.write(wav_path, data, samplerate)
+                
+                with open(wav_path, 'rb') as wav_file:
+                    transcript = self.client.audio.transcriptions.create(
+                        model=settings.WHISPER_MODEL,
+                        file=(filename.replace('.mp3', '.wav'), wav_file),
+                        response_format="verbose_json",
+                        timestamp_granularities=["word", "segment"]
+                    )
+                
+                os.unlink(wav_path)
+                result = transcript.model_dump()
+                logger.debug(f"OpenAI Whisper response keys: {result.keys() if isinstance(result, dict) else 'not a dict'}")
+                return result
+            finally:
+                os.unlink(tmp_path)
+                
         except Exception as e:
             logger.error(f"Error transcribing audio with OpenAI: {e}")
             return None
@@ -49,57 +76,92 @@ class AIService:
             audio_file.seek(0)
             audio_bytes = audio_file.read()
             
-            # Отправляем на Whisper сервер
-            async with httpx.AsyncClient(timeout=600) as client:
-                files = {"file": (filename.replace('.mp3', '.wav'), audio_bytes)}
-                response = await client.post(self.whisper_url, files=files)
-                response.raise_for_status()
+            # Создаем временный файл для soundfile чтения
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
+                tmp_path = tmp_file.name
+                tmp_file.write(audio_bytes)
+            
+            try:
+                # Читаем аудио с помощью soundfile для валидации
+                data, samplerate = sf.read(tmp_path)
+                logger.info(f"Audio validated: samplerate={samplerate}, duration={len(data)/samplerate:.2f}s, channels={1 if len(data.shape)==1 else data.shape[1]}")
                 
-                result = response.json()
+                # Переписываем в единый формат для Whisper (mono, 16kHz)
+                with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_wav:
+                    wav_path = tmp_wav.name
                 
-                # Преобразуем результат локального Whisper в формат, совместимый с OpenAI
-                # Если результат уже в правильном формате (содержит 'text')
-                if isinstance(result, dict) and "text" in result:
-                    return result
+                # Конвертируем в моно если нужно
+                if len(data.shape) > 1:
+                    data = np.mean(data, axis=1)
                 
-                # Иначе, нужно преобразовать результат
-                transcript_text = ""
-                segments = []
+                # Переискателируем если нужно
+                target_sr = 16000
+                if samplerate != target_sr:
+                    from librosa import resample
+                    data = resample(data, orig_sr=samplerate, target_sr=target_sr)
+                    samplerate = target_sr
                 
-                # Обработка списка сегментов
-                items = []
-                if isinstance(result, list):
-                    items = result
-                elif isinstance(result, dict):
-                    items = result.get("segments", result.get("results", []))
+                sf.write(wav_path, data, samplerate)
                 
-                # Если items - это список, обрабатываем каждый элемент
-                if isinstance(items, list):
-                    for item in items:
-                        if isinstance(item, dict):
-                            start = item.get("start", 0)
-                            end = item.get("end", 0)
-                            text = item.get("text", "")
-                            transcript_text += text + " "
-                            segments.append({
-                                "id": len(segments),
-                                "seek": 0,
-                                "start": float(start),
-                                "end": float(end),
-                                "text": text,
-                                "tokens": [],
-                                "temperature": 0.0,
-                                "avg_logprob": 0.0,
-                                "compression_ratio": 0.0,
-                                "no_speech_prob": 0.0,
-                                "words": [{"word": text, "start": float(start), "end": float(end)}]
-                            })
+                # Отправляем на Whisper сервер
+                with open(wav_path, 'rb') as wav_file:
+                    wav_bytes = wav_file.read()
                 
-                return {
-                    "text": transcript_text.strip(),
-                    "segments": segments,
-                    "language": "ru"
-                }
+                async with httpx.AsyncClient(timeout=600) as client:
+                    files = {"file": (filename.replace('.mp3', '.wav'), wav_bytes)}
+                    response = await client.post(self.whisper_url, files=files)
+                    response.raise_for_status()
+                    
+                    result = response.json()
+                    
+                    # Преобразуем результат локального Whisper в формат, совместимый с OpenAI
+                    # Если результат уже в правильном формате (содержит 'text')
+                    if isinstance(result, dict) and "text" in result:
+                        return result
+                    
+                    # Иначе, нужно преобразовать результат
+                    transcript_text = ""
+                    segments = []
+                    
+                    # Обработка списка сегментов
+                    items = []
+                    if isinstance(result, list):
+                        items = result
+                    elif isinstance(result, dict):
+                        items = result.get("segments", result.get("results", []))
+                    
+                    # Если items - это список, обрабатываем каждый элемент
+                    if isinstance(items, list):
+                        for item in items:
+                            if isinstance(item, dict):
+                                start = item.get("start", 0)
+                                end = item.get("end", 0)
+                                text = item.get("text", "")
+                                transcript_text += text + " "
+                                segments.append({
+                                    "id": len(segments),
+                                    "seek": 0,
+                                    "start": float(start),
+                                    "end": float(end),
+                                    "text": text,
+                                    "tokens": [],
+                                    "temperature": 0.0,
+                                    "avg_logprob": 0.0,
+                                    "compression_ratio": 0.0,
+                                    "no_speech_prob": 0.0,
+                                    "words": [{"word": text, "start": float(start), "end": float(end)}]
+                                })
+                    
+                    return {
+                        "text": transcript_text.strip(),
+                        "segments": segments,
+                        "language": "ru"
+                    }
+                    
+            finally:
+                os.unlink(tmp_path)
+                if os.path.exists(wav_path):
+                    os.unlink(wav_path)
                     
         except Exception as e:
             logger.error(f"Error transcribing audio with local Whisper: {e}")
