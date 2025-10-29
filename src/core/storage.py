@@ -36,8 +36,8 @@ class S3Storage:
             logger.error(f"Error calculating audio duration: {e}")
             return None
 
-    def upload_file(self, file_obj: BinaryIO, object_name: str, content_type: str = "audio/mpeg") -> bool:
-        """Загрузить файл в S3"""
+    def upload_file(self, file_obj: BinaryIO, object_name: str, content_type: str = "audio/mpeg") -> Optional[str]:
+        """Загрузить файл в S3 и вернуть финальный путь файла"""
         try:
             # Если это аудиофайл (начинается с meetings/), конвертируем в WAV
             if object_name.startswith("meetings/"):
@@ -79,10 +79,10 @@ class S3Storage:
                 ExtraArgs={'ContentType': content_type}
             )
             logger.info(f"File uploaded successfully to S3: {object_name}")
-            return True
+            return object_name
         except ClientError as e:
             logger.error(f"Error uploading file to S3: {e}")
-            return False
+            return None
 
     def download_file(self, object_name: str) -> Optional[bytes]:
         """Скачать файл из S3"""

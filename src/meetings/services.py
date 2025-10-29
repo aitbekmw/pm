@@ -44,7 +44,9 @@ async def create_meeting(
         
         # Вернуться в начало для загрузки
         audio_file = io.BytesIO(audio_bytes)
-        storage.upload_file(audio_file, audio_path)
+        final_audio_path = storage.upload_file(audio_file, audio_path)
+        if final_audio_path:
+            audio_path = final_audio_path
     
     # Если project_id равен 0, преобразуем в None (нет проекта)
     project_id = data.project_id if data.project_id and data.project_id > 0 else None
