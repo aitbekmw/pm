@@ -234,7 +234,8 @@ async def get_active_processing_status(
       "error_message": null,
       "started_at": "2025-10-27T12:00:00Z",
       "completed_at": null,
-      "estimated_completion": "2025-10-27T12:05:00Z"
+      "estimated_completion": "2025-10-27T12:05:00Z",
+      "stage_info": "Транскрибация аудио"
     }
     """
     processing = await selectors.get_active_processing_meeting(db, current_user.id)
@@ -250,7 +251,7 @@ async def get_active_processing_status(
             "started_at": None,
             "completed_at": None,
             "estimated_completion": None,
-            "message": "Нет активной обработки"
+            "stage_info": None
         }
     
     meeting = await selectors.get_meeting_by_id(db, processing.meeting_id)
@@ -279,7 +280,7 @@ async def get_active_processing_status(
             "transcription": "Транскрибация аудио",
             "summarization": "Создание резюме встречи",
             "action_items": "Извлечение задач"
-        }.get(processing.current_stage, "Unknown")
+        }.get(processing.current_stage, None)
     }
 
 
@@ -696,13 +697,15 @@ async def get_processing_status(
     Ответ:
     {
       "meeting_id": 1,
+      "meeting": { полные данные встречи },
       "status": "processing",
       "current_stage": "transcription",
       "progress": 35,
       "error_message": null,
       "started_at": "2025-10-27T12:00:00Z",
       "completed_at": null,
-      "estimated_completion": "2025-10-27T12:05:00Z"
+      "estimated_completion": "2025-10-27T12:05:00Z",
+      "stage_info": "Транскрибация аудио"
     }
     """
     meeting = await selectors.get_meeting_by_id(db, meeting_id)
@@ -716,6 +719,7 @@ async def get_processing_status(
     if not processing:
         return {
             "meeting_id": meeting_id,
+            "meeting": schemas.MeetingOut.from_orm(meeting) if meeting else None,
             "status": "not_started",
             "current_stage": None,
             "progress": 0,
@@ -723,7 +727,7 @@ async def get_processing_status(
             "started_at": None,
             "completed_at": None,
             "estimated_completion": None,
-            "message": "Обработка еще не начиналась"
+            "stage_info": None
         }
     
     # Вычисляем приблизительное время завершения
@@ -738,6 +742,7 @@ async def get_processing_status(
     
     return {
         "meeting_id": meeting_id,
+        "meeting": schemas.MeetingOut.from_orm(meeting) if meeting else None,
         "status": processing.status,
         "current_stage": processing.current_stage,
         "progress": processing.progress or 0,
@@ -749,7 +754,7 @@ async def get_processing_status(
             "transcription": "Транскрибация аудио",
             "summarization": "Создание резюме встречи",
             "action_items": "Извлечение задач"
-        }.get(processing.current_stage, "Unknown")
+        }.get(processing.current_stage, None)
     }
 
 
