@@ -164,7 +164,7 @@ async def get_meetings(
         previous_url = f"{base_url}?skip={previous_skip}&limit={limit}"
     
     # Преобразуем Meeting объекты в Pydantic models с информацией об организаторе
-    results = [schemas.MeetingListOutWithOrganizer.from_orm(meeting) for meeting in meetings]
+    results = [schemas.MeetingListOutWithOrganizer.model_validate(meeting) for meeting in meetings]
  
     return {
         "count": total,
@@ -268,7 +268,7 @@ async def get_active_processing_status(
     
     return {
         "meeting_id": processing.meeting_id,
-        "meeting": schemas.MeetingOut.from_orm(meeting) if meeting else None,
+        "meeting": schemas.MeetingOut.model_validate(meeting) if meeting else None,
         "status": processing.status,
         "current_stage": processing.current_stage,
         "progress": processing.progress or 0,
@@ -332,11 +332,11 @@ async def get_active_meeting_details(
     action_items = await selectors.get_meeting_action_items(db, processing.meeting_id)
     
     return {
-        "meeting": schemas.MeetingOut.from_orm(meeting),
-        "transcript": schemas.TranscriptOut.from_orm(transcript) if transcript else None,
-        "summary": schemas.SummaryOut.from_orm(summary) if summary else None,
-        "notes": [schemas.NoteOut.from_orm(note) for note in notes],
-        "action_items": [schemas.ActionItemOut.from_orm(item) for item in action_items],
+        "meeting": schemas.MeetingOut.model_validate(meeting),
+        "transcript": schemas.TranscriptOut.model_validate(transcript) if transcript else None,
+        "summary": schemas.SummaryOut.model_validate(summary) if summary else None,
+        "notes": [schemas.NoteOut.model_validate(note) for note in notes],
+        "action_items": [schemas.ActionItemOut.model_validate(item) for item in action_items],
         "processing": {
             "status": processing.status,
             "current_stage": processing.current_stage,
@@ -385,11 +385,11 @@ async def get_meeting(
     action_items = await selectors.get_meeting_action_items(db, meeting_id)
     
     return schemas.MeetingDetailsOut(
-        meeting=meeting,
-        transcript=transcript,
-        summary=summary,
-        notes=notes,
-        action_items=action_items
+        meeting=schemas.MeetingOut.model_validate(meeting),
+        transcript=schemas.TranscriptOut.model_validate(transcript) if transcript else None,
+        summary=schemas.SummaryOut.model_validate(summary) if summary else None,
+        notes=[schemas.NoteOut.model_validate(note) for note in notes],
+        action_items=[schemas.ActionItemOut.model_validate(item) for item in action_items]
     )
 
 
@@ -739,7 +739,7 @@ async def get_processing_status(
     if not processing:
         return {
             "meeting_id": meeting_id,
-            "meeting": schemas.MeetingOut.from_orm(meeting) if meeting else None,
+            "meeting": schemas.MeetingOut.model_validate(meeting) if meeting else None,
             "status": "not_started",
             "current_stage": None,
             "progress": 0,
@@ -762,7 +762,7 @@ async def get_processing_status(
     
     return {
         "meeting_id": meeting_id,
-        "meeting": schemas.MeetingOut.from_orm(meeting) if meeting else None,
+        "meeting": schemas.MeetingOut.model_validate(meeting) if meeting else None,
         "status": processing.status,
         "current_stage": processing.current_stage,
         "progress": processing.progress or 0,

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_serializer
+from pydantic import BaseModel, field_serializer, ConfigDict
 from typing import Optional
 from datetime import datetime
 from src.core.storage import storage
@@ -11,8 +11,7 @@ class OrganizerInfo(BaseModel):
     first_name: str
     last_name: str
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
     
     @property
     def full_name(self) -> str:
@@ -56,8 +55,7 @@ class MeetingOut(BaseModel):
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
     
     @field_serializer('audio_file_path')
     def serialize_audio_file_path(self, value: Optional[str], _info):
@@ -77,8 +75,7 @@ class MeetingListOut(BaseModel):
     comments: Optional[str]
     created_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MeetingListOutWithOrganizer(BaseModel):
@@ -93,8 +90,7 @@ class MeetingListOutWithOrganizer(BaseModel):
     comments: Optional[str]
     created_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
     
     @property
     def organizer_name(self) -> Optional[str]:
@@ -112,8 +108,7 @@ class TranscriptOut(BaseModel):
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SummaryOut(BaseModel):
@@ -123,8 +118,7 @@ class SummaryOut(BaseModel):
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class NoteCreate(BaseModel):
@@ -143,8 +137,7 @@ class NoteOut(BaseModel):
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ActionItemCreate(BaseModel):
@@ -173,8 +166,7 @@ class ActionItemOut(BaseModel):
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MeetingDetailsOut(BaseModel):
@@ -184,8 +176,7 @@ class MeetingDetailsOut(BaseModel):
     notes: list[NoteOut] = []
     action_items: list[ActionItemOut] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MeetingsFilterParams(BaseModel):
@@ -197,8 +188,7 @@ class MeetingsFilterParams(BaseModel):
     max_duration: Optional[int] = None
     sort_by: str = "date_desc"  # date_asc, date_desc, duration_asc, duration_desc
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(json_schema_extra={
             "example": {
                 "organizer_id": 1,
                 "start_date": "2024-01-01T00:00:00Z",
@@ -207,5 +197,5 @@ class MeetingsFilterParams(BaseModel):
                 "max_duration": 120,
                 "sort_by": "date_desc"
             }
-        }
+        })
 
