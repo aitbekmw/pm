@@ -132,6 +132,41 @@ async def get_meeting_processing(
     return result.scalars().first()
 
 
+async def get_active_processing_meeting(
+    db: AsyncSession,
+    user_id: int
+) -> Optional[MeetingProcessing]:
+    """Получить встречу, которая находится в процессе обработки для пользователя"""
+    result = await db.execute(
+        select(MeetingProcessing)
+        .join(Meeting, MeetingProcessing.meeting_id == Meeting.id)
+        .where(
+            and_(
+                Meeting.organizer_id == user_id,
+                MeetingProcessing.status == "processing"
+            )
+        )
+        .order_by(MeetingProcessing.started_at.desc())
+    )
+    return result.scalars().first()
+
+
+async def get_active_meeting_with_details(
+    db: AsyncSession,
+    user_id: int
+):
+    """Получить встречу в процессе обработки со всеми деталями"""
+    processing = await get_active_processing_meeting(db, user_id)
+    if not processing:
+        return None
+    
+    meeting = await get_meeting_by_id(db, processing.meeting_id)
+    return {
+        "meeting": meeting,
+        "processing": processing
+    }
+
+
 async def search_meetings(
     db: AsyncSession,
     query: str,

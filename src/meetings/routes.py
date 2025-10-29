@@ -214,6 +214,139 @@ async def search_meetings(
     return meetings
 
 
+@router.get("/processing/status/active")
+async def get_active_processing_status(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Получить статус обработки активного (в процессе) митинга без указания ID
+    
+    Возвращает встречу, которая в данный момент обрабатывается (статус 'processing').
+    Если активной обработки нет, возвращает not_started.
+    
+    Ответ:
+    {
+      "meeting_id": 1,
+      "meeting": { полные данные встречи },
+      "status": "processing",
+      "current_stage": "transcription",
+      "progress": 35,
+      "error_message": null,
+      "started_at": "2025-10-27T12:00:00Z",
+      "completed_at": null,
+      "estimated_completion": "2025-10-27T12:05:00Z"
+    }
+    """
+    processing = await selectors.get_active_processing_meeting(db, current_user.id)
+    
+    if not processing:
+        return {
+            "meeting_id": None,
+            "meeting": None,
+            "status": "not_started",
+            "current_stage": None,
+            "progress": 0,
+            "error_message": None,
+            "started_at": None,
+            "completed_at": None,
+            "estimated_completion": None,
+            "message": "Нет активной обработки"
+        }
+    
+    meeting = await selectors.get_meeting_by_id(db, processing.meeting_id)
+    
+    # Вычисляем приблизительное время завершения
+    estimated_completion = None
+    if processing.status == "processing" and processing.started_at and processing.progress > 0:
+        from datetime import datetime, timezone, timedelta
+        elapsed = (datetime.now(timezone.utc) - processing.started_at).total_seconds()
+        if processing.progress > 0:
+            total_estimated = (elapsed / processing.progress) * 100
+            remaining = total_estimated - elapsed
+            estimated_completion = datetime.now(timezone.utc) + timedelta(seconds=remaining)
+    
+    return {
+        "meeting_id": processing.meeting_id,
+        "meeting": schemas.MeetingOut.from_orm(meeting) if meeting else None,
+        "status": processing.status,
+        "current_stage": processing.current_stage,
+        "progress": processing.progress or 0,
+        "error_message": processing.error_message,
+        "started_at": processing.started_at,
+        "completed_at": processing.completed_at,
+        "estimated_completion": estimated_completion,
+        "stage_info": {
+            "transcription": "Транскрибация аудио",
+            "summarization": "Создание резюме встречи",
+            "action_items": "Извлечение задач"
+        }.get(processing.current_stage, "Unknown")
+    }
+
+
+@router.get("/active/details")
+async def get_active_meeting_details(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Получить полные детали активного (в процессе) митинга без указания ID
+    
+    Возвращает полную информацию о встречей в процессе (включая транскрипт, резюме, заметки и задачи).
+    
+    Ответ:
+    {
+      "meeting": { полные данные встречи },
+      "transcript": { текст и временные метки },
+      "summary": { резюме },
+      "notes": [ список заметок ],
+      "action_items": [ список задач ],
+      "processing": { информация об обработке }
+    }
+    """
+    processing = await selectors.get_active_processing_meeting(db, current_user.id)
+    
+    if not processing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Нет активной обработки"
+        )
+    
+    meeting = await selectors.get_meeting_by_id(db, processing.meeting_id)
+    if not meeting:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Meeting not found"
+        )
+    
+    # Проверить доступ
+    if meeting.organizer_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied to this meeting"
+        )
+    
+    # Получить связанные данные
+    transcript = await selectors.get_meeting_transcript(db, processing.meeting_id)
+    summary = await selectors.get_meeting_summary(db, processing.meeting_id)
+    notes = await selectors.get_meeting_notes(db, processing.meeting_id)
+    action_items = await selectors.get_meeting_action_items(db, processing.meeting_id)
+    
+    return {
+        "meeting": schemas.MeetingOut.from_orm(meeting),
+        "transcript": schemas.TranscriptOut.from_orm(transcript) if transcript else None,
+        "summary": schemas.SummaryOut.from_orm(summary) if summary else None,
+        "notes": [schemas.NoteOut.from_orm(note) for note in notes],
+        "action_items": [schemas.ActionItemOut.from_orm(item) for item in action_items],
+        "processing": {
+            "status": processing.status,
+            "current_stage": processing.current_stage,
+            "progress": processing.progress or 0,
+            "error_message": processing.error_message,
+            "started_at": processing.started_at,
+            "completed_at": processing.completed_at
+        }
+    }
+
+
 @router.get("/{meeting_id}", response_model=schemas.MeetingDetailsOut)
 async def get_meeting(
     meeting_id: int,
