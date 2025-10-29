@@ -25,6 +25,17 @@ class S3Storage:
         )
         self.bucket_name = settings.S3_BUCKET_NAME
 
+    def get_audio_duration(self, audio_bytes: bytes) -> Optional[int]:
+        """Получить длительность аудио в секундах"""
+        try:
+            audio_data, sr = librosa.load(io.BytesIO(audio_bytes), sr=None, mono=True)
+            duration_seconds = int(librosa.get_duration(y=audio_data, sr=sr))
+            logger.info(f"Audio duration calculated: {duration_seconds} seconds")
+            return duration_seconds
+        except Exception as e:
+            logger.error(f"Error calculating audio duration: {e}")
+            return None
+
     def upload_file(self, file_obj: BinaryIO, object_name: str, content_type: str = "audio/mpeg") -> bool:
         """Загрузить файл в S3"""
         try:

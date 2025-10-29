@@ -35,7 +35,9 @@ class AIService:
                 response_format="verbose_json",
                 timestamp_granularities=["word", "segment"]
             )
-            return transcript.model_dump()
+            result = transcript.model_dump()
+            logger.debug(f"OpenAI Whisper response keys: {result.keys() if isinstance(result, dict) else 'not a dict'}")
+            return result
         except Exception as e:
             logger.error(f"Error transcribing audio with OpenAI: {e}")
             return None
@@ -126,6 +128,8 @@ class AIService:
 Ответ должен быть на русском языке, структурированным и кратким (не более 500 слов)."""
 
             logger.info(f"Sending summarization request to {settings.GPT_MODEL}...")
+            logger.debug(f"API Key present: {bool(settings.OPENAI_API_KEY)}, Transcript length: {len(transcript_text)}")
+            
             response = self.client.chat.completions.create(
                 model=settings.GPT_MODEL,
                 messages=[
@@ -136,9 +140,12 @@ class AIService:
                 max_completion_tokens=1000
             )
             logger.info("Summarization response received successfully")
-            return response.choices[0].message.content
+            result = response.choices[0].message.content
+            logger.debug(f"Summary result: {result[:100]}..." if result else "Summary result is None")
+            return result
         except Exception as e:
-            logger.error(f"Error summarizing transcript: {e}", exc_info=True)
+            logger.error(f"Error summarizing transcript: {type(e).__name__}: {str(e)}", exc_info=True)
+            logger.error(f"Full exception details:", exc_info=True)
             return None
 
     async def extract_action_items(self, transcript_text: str) -> Optional[list[dict]]:

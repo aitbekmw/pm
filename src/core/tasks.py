@@ -125,6 +125,8 @@ async def process_meeting(ctx, meeting_id: int):
             logger.debug(f"Summarization result: {summary_text[:100] if summary_text else 'None'}...")
             
             if not summary_text:
+                logger.error(f"Summarization returned None or empty for meeting {meeting_id}")
+                logger.error(f"Meeting ID: {meeting_id}, Title: {meeting.title}, Transcript length: {len(transcript_text)}")
                 raise Exception("Summarization failed")
             
             processing.progress = 80
