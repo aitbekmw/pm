@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File,
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from datetime import datetime
+import logging
 
 from src.db.deps import get_db
 from src.users.models import User
@@ -12,6 +13,7 @@ from src.core.queue import enqueue_meeting_processing
 
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/", response_model=schemas.MeetingOut, status_code=status.HTTP_201_CREATED)
@@ -24,7 +26,13 @@ async def create_meeting(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Создать новую встречу с опциональной загрузкой аудио"""
+    """Создать новую встречу с опциональной загрузкой аудио
+    
+    При загрузке аудиофайла автоматически запускается обработка:
+    - Транскрибация аудио
+    - Суммаризация транскрипта
+    - Извлечение action items
+    """
     # Проверить доступ к проекту если указан
     if project_id:
         has_access = await project_selectors.check_user_has_project_access(
@@ -56,6 +64,12 @@ async def create_meeting(
     meeting = await services.create_meeting(
         db, data, current_user.id, audio_content, audio_filename
     )
+    
+    # Автоматически запустить обработку если загружено аудио
+    if audio_file:
+        job_id = await enqueue_meeting_processing(meeting.id)
+        # Логирование (можно удалить если не нужно)
+        logger.info(f"Meeting {meeting.id} processing started automatically after file upload, job_id={job_id}")
     
     return meeting
 
