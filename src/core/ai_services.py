@@ -36,15 +36,16 @@ class AIService:
             audio_file.seek(0)
             audio_bytes = audio_file.read()
             
-            # Создаем временный файл для сохранения исходного аудио
-            with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+            # Создаем временный файл с оригинальным расширением для правильного определения формата
+            file_extension = filename.split('.')[-1] if '.' in filename else 'mp3'
+            with tempfile.NamedTemporaryFile(suffix=f'.{file_extension}', delete=False) as tmp_file:
                 tmp_path = tmp_file.name
                 tmp_file.write(audio_bytes)
             
             try:
                 # Используем librosa для универсального чтения аудио (поддерживает MP3, WAV, FLAC, etc.)
-                import librosa
-                data, samplerate = librosa.load(tmp_path, sr=None, mono=True)
+                from librosa import load as librosa_load
+                data, samplerate = librosa_load(tmp_path, sr=None, mono=True)
                 logger.info(f"Audio loaded with librosa: samplerate={samplerate}, shape={data.shape}")
                 
                 # Преобразуем в WAV формат для отправки на OpenAI
@@ -63,7 +64,7 @@ class AIService:
                 with open(wav_path, 'rb') as wav_file:
                     transcript = self.client.audio.transcriptions.create(
                         model=settings.WHISPER_MODEL,
-                        file=(filename.replace('.mp3', '.wav'), wav_file),
+                        file=(filename.replace(f'.{file_extension}', '.wav'), wav_file),
                         response_format="verbose_json",
                         timestamp_granularities=["word", "segment"]
                     )
@@ -90,16 +91,20 @@ class AIService:
             audio_file.seek(0)
             audio_bytes = audio_file.read()
             
-            # Создаем временный файл для сохранения исходного аудио
-            with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+            # Определяем расширение файла для правильного определения формата librosa
+            file_extension = filename.split('.')[-1] if '.' in filename else 'mp3'
+            
+            # Создаем временный файл с правильным расширением
+            with tempfile.NamedTemporaryFile(suffix=f'.{file_extension}', delete=False) as tmp_file:
                 tmp_path = tmp_file.name
                 tmp_file.write(audio_bytes)
             
             try:
                 # Используем librosa для универсального чтения аудио (поддерживает MP3, WAV, FLAC, etc.)
-                import librosa
-                data, samplerate = librosa.load(tmp_path, sr=None, mono=False)
-                logger.info(f"Audio loaded with librosa: samplerate={samplerate}, duration={len(data)/samplerate:.2f}s if mono else dur={(len(data[0])/samplerate if isinstance(data, np.ndarray) and len(data.shape) > 1 else len(data)/samplerate):.2f}s")
+                from librosa import load as librosa_load
+                logger.info(f"Loading audio from {tmp_path} with extension {file_extension}")
+                data, samplerate = librosa_load(tmp_path, sr=None, mono=False)
+                logger.info(f"Audio loaded with librosa: samplerate={samplerate}, shape={data.shape}")
                 
                 # Переписываем в единый формат для Whisper (mono, 16kHz)
                 with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_wav:
@@ -112,7 +117,8 @@ class AIService:
                 # Переискателируем если нужно
                 target_sr = 16000
                 if samplerate != target_sr:
-                    data = librosa.resample(data, orig_sr=samplerate, target_sr=target_sr)
+                    from librosa import resample
+                    data = resample(data, orig_sr=samplerate, target_sr=target_sr)
                     samplerate = target_sr
                 
                 # Убеждаемся, что данные в правильном формате для soundfile (float32 и в диапазоне [-1, 1])
@@ -129,7 +135,7 @@ class AIService:
                     wav_bytes = wav_file.read()
                 
                 async with httpx.AsyncClient(timeout=600) as client:
-                    files = {"file": (filename.replace('.mp3', '.wav'), wav_bytes)}
+                    files = {"file": (filename.replace(f'.{file_extension}', '.wav'), wav_bytes)}
                     response = await client.post(self.whisper_url, files=files)
                     response.raise_for_status()
                     
