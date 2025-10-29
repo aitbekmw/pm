@@ -103,12 +103,26 @@ class S3Storage:
             logger.error(f"Error deleting file from S3: {e}")
             return False
 
-    def generate_presigned_url(self, object_name: str, expiration: int = 3600) -> Optional[str]:
-        """Сгенерировать временную ссылку на файл"""
+    def generate_presigned_url(self, object_name: str, expiration: int = 3600, as_attachment: bool = False) -> Optional[str]:
+        """Сгенерировать временную ссылку на файл
+        
+        Args:
+            object_name: имя объекта в S3
+            expiration: время жизни ссылки в секундах
+            as_attachment: если True, добавляет Content-Disposition: attachment
+        """
         try:
+            params = {'Bucket': self.bucket_name, 'Key': object_name}
+            
+            # Если нужно скачивать как attachment, добавляем параметр
+            if as_attachment:
+                # Получаем имя файла из пути
+                filename = object_name.split('/')[-1]
+                params['ResponseContentDisposition'] = f'attachment; filename="{filename}"'
+            
             url = self.s3_client.generate_presigned_url(
                 'get_object',
-                Params={'Bucket': self.bucket_name, 'Key': object_name},
+                Params=params,
                 ExpiresIn=expiration
             )
             logger.debug(f"Presigned URL generated for: {object_name}")

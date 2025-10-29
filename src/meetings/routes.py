@@ -484,7 +484,20 @@ async def get_audio_url(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Получить временную ссылку для скачивания аудио"""
+    """Получить временные ссылки для скачивания аудио
+    
+    Возвращает:
+    - url: ссылка для воспроизведения (Content-Type: audio/wav)
+    - download_url: ссылка для скачивания с Content-Disposition: attachment
+    - expires_in: время жизни ссылок в секундах
+    
+    Пример ответа:
+    {
+      "url": "https://s3.amazonaws.com/bucket/meetings/uuid.wav?X-Amz-Expires=3600&...",
+      "download_url": "https://s3.amazonaws.com/bucket/meetings/uuid.wav?response-content-disposition=attachment&...",
+      "expires_in": 3600
+    }
+    """
     meeting = await selectors.get_meeting_by_id(db, meeting_id)
     if not meeting:
         raise HTTPException(
@@ -508,14 +521,21 @@ async def get_audio_url(
             detail="Access denied"
         )
     
-    url = await services.get_audio_download_url(db, meeting_id)
-    if not url:
+    # Получить обе ссылки
+    url = await services.get_audio_download_url(db, meeting_id, as_attachment=False)
+    download_url = await services.get_audio_download_url(db, meeting_id, as_attachment=True)
+    
+    if not url or not download_url:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Audio file not found"
         )
     
-    return {"url": url, "expires_in": 3600}
+    return {
+        "url": url,
+        "download_url": download_url,
+        "expires_in": 3600
+    }
 
 
 # Notes endpoints

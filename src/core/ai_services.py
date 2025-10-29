@@ -101,7 +101,7 @@ class AIService:
                     data = resample(data, orig_sr=samplerate, target_sr=target_sr)
                     samplerate = target_sr
                 
-                sf.write(wav_path, data, samplerate)
+                sf.write(wav_path, data, samplerate, format='WAV')
                 
                 # Отправляем на Whisper сервер
                 with open(wav_path, 'rb') as wav_file:
