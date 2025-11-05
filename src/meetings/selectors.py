@@ -11,8 +11,12 @@ from src.users.models import User
 
 
 async def get_meeting_by_id(db: AsyncSession, meeting_id: int) -> Optional[Meeting]:
-    """Получить встречу по ID"""
-    result = await db.execute(select(Meeting).where(Meeting.id == meeting_id))
+    """Получить встречу по ID с загрузкой организатора"""
+    result = await db.execute(
+        select(Meeting)
+        .where(Meeting.id == meeting_id)
+        .options(joinedload(Meeting.organizer))
+    )
     return result.scalars().first()
 
 
@@ -187,6 +191,7 @@ async def search_meetings(
     result = await db.execute(
         select(Meeting)
         .where(and_(*filters))
+        .options(joinedload(Meeting.organizer))
         .order_by(Meeting.meeting_date.desc())
         .offset(skip)
         .limit(limit)

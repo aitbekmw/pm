@@ -49,9 +49,9 @@ class MeetingOut(BaseModel):
     id: int
     title: str
     project_id: Optional[int]
-    organizer_id: Optional[int]
+    organizer_name: Optional[str] = None
     meeting_date: datetime
-    duration: Optional[str] = None  # Формат ЧЧ:ММ:СС
+    duration: Optional[int] = None  # Длительность в секундах
     audio_file_path: Optional[str]
     audio_file_size: Optional[int]
     comments: Optional[str]
@@ -63,22 +63,30 @@ class MeetingOut(BaseModel):
     
     @model_validator(mode='before')
     @classmethod
-    def convert_duration(cls, data):
-        """Преобразует duration из секунд в формат ЧЧ:ММ:СС перед валидацией"""
-        # Обрабатываем словарь
-        if isinstance(data, dict) and 'duration' in data and data['duration'] is not None:
-            seconds = data['duration']
-            hours = seconds // 3600
-            minutes = (seconds % 3600) // 60
-            secs = seconds % 60
-            data['duration'] = f"{hours:02d}:{minutes:02d}:{secs:02d}"
-        # Обрабатываем объект SQLAlchemy
-        elif hasattr(data, 'duration') and data.duration is not None:
-            seconds = data.duration
-            hours = seconds // 3600
-            minutes = (seconds % 3600) // 60
-            secs = seconds % 60
-            data.duration = f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    def convert_fields(cls, data):
+        """Получает имя организатора"""
+        if isinstance(data, dict):
+            # Получаем имя организатора
+            organizer_name = None
+            if 'organizer' in data and data['organizer']:
+                organizer = data['organizer']
+                if hasattr(organizer, 'first_name') and hasattr(organizer, 'last_name'):
+                    organizer_name = f"{organizer.first_name} {organizer.last_name}".strip()
+            elif 'organizer_id' in data and data['organizer_id']:
+                # Если organizer не загружен, но есть organizer_id, оставляем None
+                pass
+            data['organizer_name'] = organizer_name
+            # Удаляем organizer_id и organizer из данных, чтобы они не попадали в ответ
+            data.pop('organizer_id', None)
+            data.pop('organizer', None)
+        elif hasattr(data, 'organizer'):
+            # Обрабатываем объект SQLAlchemy
+            organizer_name = None
+            if data.organizer:
+                organizer = data.organizer
+                if hasattr(organizer, 'first_name') and hasattr(organizer, 'last_name'):
+                    organizer_name = f"{organizer.first_name} {organizer.last_name}".strip()
+            data.organizer_name = organizer_name
         return data
     
     @field_serializer('audio_file_path')
@@ -93,9 +101,9 @@ class MeetingListOut(BaseModel):
     id: int
     title: str
     project_id: Optional[int]
-    organizer_id: Optional[int]
+    organizer_name: Optional[str] = None
     meeting_date: datetime
-    duration: Optional[str] = None  # Формат ЧЧ:ММ:СС
+    duration: Optional[int] = None  # Длительность в секундах
     comments: Optional[str]
     notes: Optional[str]
     created_at: Optional[datetime]
@@ -104,22 +112,30 @@ class MeetingListOut(BaseModel):
     
     @model_validator(mode='before')
     @classmethod
-    def convert_duration(cls, data):
-        """Преобразует duration из секунд в формат ЧЧ:ММ:СС перед валидацией"""
-        # Обрабатываем словарь
-        if isinstance(data, dict) and 'duration' in data and data['duration'] is not None:
-            seconds = data['duration']
-            hours = seconds // 3600
-            minutes = (seconds % 3600) // 60
-            secs = seconds % 60
-            data['duration'] = f"{hours:02d}:{minutes:02d}:{secs:02d}"
-        # Обрабатываем объект SQLAlchemy
-        elif hasattr(data, 'duration') and data.duration is not None:
-            seconds = data.duration
-            hours = seconds // 3600
-            minutes = (seconds % 3600) // 60
-            secs = seconds % 60
-            data.duration = f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    def convert_fields(cls, data):
+        """Получает имя организатора"""
+        if isinstance(data, dict):
+            # Получаем имя организатора
+            organizer_name = None
+            if 'organizer' in data and data['organizer']:
+                organizer = data['organizer']
+                if hasattr(organizer, 'first_name') and hasattr(organizer, 'last_name'):
+                    organizer_name = f"{organizer.first_name} {organizer.last_name}".strip()
+            elif 'organizer_id' in data and data['organizer_id']:
+                # Если organizer не загружен, но есть organizer_id, оставляем None
+                pass
+            data['organizer_name'] = organizer_name
+            # Удаляем organizer_id и organizer из данных, чтобы они не попадали в ответ
+            data.pop('organizer_id', None)
+            data.pop('organizer', None)
+        elif hasattr(data, 'organizer'):
+            # Обрабатываем объект SQLAlchemy
+            organizer_name = None
+            if data.organizer:
+                organizer = data.organizer
+                if hasattr(organizer, 'first_name') and hasattr(organizer, 'last_name'):
+                    organizer_name = f"{organizer.first_name} {organizer.last_name}".strip()
+            data.organizer_name = organizer_name
         return data
 
 
@@ -130,8 +146,9 @@ class MeetingListOutWithOrganizer(BaseModel):
     project_id: Optional[int]
     organizer_id: Optional[int]
     organizer: Optional[OrganizerInfo] = None
+    organizer_name: Optional[str] = None  # Имя организатора для удобства
     meeting_date: datetime
-    duration: Optional[str] = None  # Формат ЧЧ:ММ:СС
+    duration: Optional[int] = None  # Длительность в секундах
     comments: Optional[str]
     notes: Optional[str]
     created_at: Optional[datetime]
@@ -140,30 +157,35 @@ class MeetingListOutWithOrganizer(BaseModel):
     
     @model_validator(mode='before')
     @classmethod
-    def convert_duration(cls, data):
-        """Преобразует duration из секунд в формат ЧЧ:ММ:СС перед валидацией"""
-        # Обрабатываем словарь
-        if isinstance(data, dict) and 'duration' in data and data['duration'] is not None:
-            seconds = data['duration']
-            hours = seconds // 3600
-            minutes = (seconds % 3600) // 60
-            secs = seconds % 60
-            data['duration'] = f"{hours:02d}:{minutes:02d}:{secs:02d}"
-        # Обрабатываем объект SQLAlchemy
-        elif hasattr(data, 'duration') and data.duration is not None:
-            seconds = data.duration
-            hours = seconds // 3600
-            minutes = (seconds % 3600) // 60
-            secs = seconds % 60
-            data.duration = f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    def convert_fields(cls, data):
+        """Получает имя организатора"""
+        if isinstance(data, dict):
+            # Получаем имя организатора
+            organizer_name = None
+            if 'organizer' in data and data['organizer']:
+                organizer = data['organizer']
+                if isinstance(organizer, dict):
+                    if 'first_name' in organizer and 'last_name' in organizer:
+                        organizer_name = f"{organizer['first_name']} {organizer['last_name']}".strip()
+                elif hasattr(organizer, 'first_name') and hasattr(organizer, 'last_name'):
+                    organizer_name = f"{organizer.first_name} {organizer.last_name}".strip()
+            data['organizer_name'] = organizer_name
+        elif hasattr(data, 'organizer'):
+            # Обрабатываем объект SQLAlchemy
+            organizer_name = None
+            if data.organizer:
+                organizer = data.organizer
+                if hasattr(organizer, 'first_name') and hasattr(organizer, 'last_name'):
+                    organizer_name = f"{organizer.first_name} {organizer.last_name}".strip()
+            data.organizer_name = organizer_name
         return data
     
     @property
-    def organizer_name(self) -> Optional[str]:
-        """Полное имя организатора (удобно для отображения)"""
+    def organizer_name_property(self) -> Optional[str]:
+        """Полное имя организатора (удобно для отображения) - используйте organizer_name поле"""
         if self.organizer:
             return self.organizer.full_name
-        return None
+        return self.organizer_name
 
 
 class TranscriptOut(BaseModel):
