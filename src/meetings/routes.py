@@ -577,7 +577,7 @@ async def get_audio_url(
     # Проверить доступ
     if meeting.project_id:
         has_access = await project_selectors.check_user_has_project_access(
-            db, current_user.id, meeting.project_id
+            db, current_user.id, current_user.role, meeting.project_id
         )
         if not has_access and meeting.organizer_id != current_user.id:
             raise HTTPException(
@@ -626,7 +626,7 @@ async def create_note(
     # Проверить доступ
     if meeting.project_id:
         has_access = await project_selectors.check_user_has_project_access(
-            db, current_user.id, meeting.project_id
+            db, current_user.id, current_user.role, meeting.project_id
         )
         if not has_access and meeting.organizer_id != current_user.id:
             raise HTTPException(
@@ -680,7 +680,7 @@ async def create_action_item(
     # Проверить доступ
     if meeting.project_id:
         has_access = await project_selectors.check_user_has_project_access(
-            db, current_user.id, meeting.project_id
+            db, current_user.id, current_user.role, meeting.project_id
         )
         if not has_access and meeting.organizer_id != current_user.id:
             raise HTTPException(
@@ -734,7 +734,7 @@ async def start_meeting_processing(
     # Проверить доступ
     if meeting.project_id:
         has_access = await project_selectors.check_user_has_project_access(
-            db, current_user.id, meeting.project_id
+            db, current_user.id, current_user.role, meeting.project_id
         )
         if not has_access and meeting.organizer_id != current_user.id:
             raise HTTPException(
@@ -885,7 +885,7 @@ async def get_meeting_duration(
     # Проверяем доступ
     if meeting.project_id:
         has_access = await project_selectors.check_user_has_project_access(
-            db, current_user.id, meeting.project_id
+            db, current_user.id, current_user.role, meeting.project_id
         )
         if not has_access and meeting.organizer_id != current_user.id:
             raise HTTPException(
