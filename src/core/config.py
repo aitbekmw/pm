@@ -40,10 +40,14 @@ class Settings(BaseSettings):
     S3_BUCKET_NAME: str = Field(default="pm-assistant", env="S3_BUCKET_NAME")
     S3_REGION: str = Field(default="us-east-1", env="S3_REGION")
 
-    # OpenAI
-    OPENAI_API_KEY: str = Field(..., env="OPENAI_API_KEY")
-    WHISPER_MODEL: str = Field(default="whisper-1", env="WHISPER_MODEL")
-    GPT_MODEL: str = Field(default="gpt-4-turbo-preview", env="GPT_MODEL")
+    # OpenAI (закомментировано - переходим на Gemini)
+    # OPENAI_API_KEY: str = Field(..., env="OPENAI_API_KEY")
+    # WHISPER_MODEL: str = Field(default="whisper-1", env="WHISPER_MODEL")
+    # GPT_MODEL: str = Field(default="gpt-4-turbo-preview", env="GPT_MODEL")
+    
+    # Gemini
+    GEMINI_API_KEY: str = Field(..., env="GEMINI_API_KEY")
+    GEMINI_MODEL: str = Field(default="gemini-1.5-flash", env="GEMINI_MODEL")
     
     # Whisper Transcription (Local or OpenAI)
     WHISPER_SERVER_URL: Optional[str] = Field(default="http://10.0.10.3:8000/transcribe", env="WHISPER_SERVER_URL")

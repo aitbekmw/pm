@@ -1,4 +1,6 @@
-from openai import OpenAI
+# Старый код OpenAI (закомментирован)
+# from openai import OpenAI
+from google import generativeai as genai
 from typing import Optional, BinaryIO
 import json
 import httpx
@@ -12,7 +14,13 @@ logger = logging.getLogger(__name__)
 
 class AIService:
     def __init__(self):
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        # Старый код OpenAI (закомментирован)
+        # self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        
+        # Новая реализация Gemini
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        self.model = genai.GenerativeModel(settings.GEMINI_MODEL)
+        
         self.whisper_url = settings.WHISPER_SERVER_URL
         self.use_local_whisper = settings.USE_LOCAL_WHISPER
 
@@ -21,36 +29,40 @@ class AIService:
         if self.use_local_whisper and self.whisper_url:
             return await self._transcribe_local_whisper(audio_file, filename)
         else:
-            return await self._transcribe_openai_whisper(audio_file, filename)
+            # Используем локальный Whisper по умолчанию, так как Gemini не имеет прямого API для транскрибации
+            return await self._transcribe_local_whisper(audio_file, filename)
+            # Старый код OpenAI Whisper (закомментирован)
+            # return await self._transcribe_openai_whisper(audio_file, filename)
 
-    async def _transcribe_openai_whisper(self, audio_file: BinaryIO, filename: str = "audio.wav") -> Optional[dict]:
-        """Транскрибация через OpenAI Whisper API"""
-        try:
-            audio_file.seek(0)
-            audio_bytes = audio_file.read()
+    # Старый код OpenAI Whisper (закомментирован)
+    # async def _transcribe_openai_whisper(self, audio_file: BinaryIO, filename: str = "audio.wav") -> Optional[dict]:
+    #     """Транскрибация через OpenAI Whisper API"""
+    #     try:
+    #         audio_file.seek(0)
+    #         audio_bytes = audio_file.read()
 
-            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
-                wav_path = tmp_file.name
-                tmp_file.write(audio_bytes)
+    #         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
+    #             wav_path = tmp_file.name
+    #             tmp_file.write(audio_bytes)
 
-            try:
-                with open(wav_path, 'rb') as wav_file:
-                    transcript = self.client.audio.transcriptions.create(
-                        model=settings.WHISPER_MODEL,
-                        file=(filename, wav_file),
-                        response_format="verbose_json",
-                        timestamp_granularities=["word", "segment"]
-                    )
+    #         try:
+    #             with open(wav_path, 'rb') as wav_file:
+    #                 transcript = self.client.audio.transcriptions.create(
+    #                     model=settings.WHISPER_MODEL,
+    #                     file=(filename, wav_file),
+    #                     response_format="verbose_json",
+    #                     timestamp_granularities=["word", "segment"]
+    #                 )
 
-                return transcript.model_dump()
+    #             return transcript.model_dump()
 
-            finally:
-                if os.path.exists(wav_path):
-                    os.unlink(wav_path)
+    #         finally:
+    #             if os.path.exists(wav_path):
+    #                 os.unlink(wav_path)
 
-        except Exception as e:
-            logger.error(f"Error transcribing audio with OpenAI: {e}", exc_info=True)
-            return None
+    #     except Exception as e:
+    #         logger.error(f"Error transcribing audio with OpenAI: {e}", exc_info=True)
+    #         return None
 
     async def _transcribe_local_whisper(self, audio_file: BinaryIO, filename: str = "audio.wav") -> Optional[dict]:
         """Транскрибация через локальный Whisper сервер"""
@@ -133,17 +145,36 @@ class AIService:
 
 Ответ на русском языке, структурированный (максимум 500 слов)."""
 
-            response = self.client.chat.completions.create(
-                model=settings.GPT_MODEL,
-                messages=[
-                    {"role": "system", "content": "Ты - профессиональный ассистент для менеджеров проектов. Создавай краткие структурированные резюме встреч на русском языке."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=1,
-                max_completion_tokens=1000
+            # Старый код OpenAI (закомментирован)
+            # response = self.client.chat.completions.create(
+            #     model=settings.GPT_MODEL,
+            #     messages=[
+            #         {"role": "system", "content": "Ты - профессиональный ассистент для менеджеров проектов. Создавай краткие структурированные резюме встреч на русском языке."},
+            #         {"role": "user", "content": prompt}
+            #     ],
+            #     temperature=1,
+            #     max_completion_tokens=1000
+            # )
+            # result = response.choices[0].message.content
+
+            # Новая реализация Gemini
+            system_instruction = "Ты - профессиональный ассистент для менеджеров проектов. Создавай краткие структурированные резюме встреч на русском языке."
+            
+            # Создаем модель с system instruction для этого запроса
+            model_with_instruction = genai.GenerativeModel(
+                model_name=settings.GEMINI_MODEL,
+                system_instruction=system_instruction
+            )
+            
+            response = model_with_instruction.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=1.0,
+                    max_output_tokens=1000,
+                )
             )
 
-            result = response.choices[0].message.content
+            result = response.text
             logger.info(f"Summarization completed successfully, result length: {len(result) if result else 0}")
             return result
 
@@ -173,18 +204,49 @@ class AIService:
 ]
 Если задач нет, верни: []"""
 
-            response = self.client.chat.completions.create(
-                model=settings.GPT_MODEL,
-                messages=[
-                    {"role": "system", "content": "Ты - ассистент для извлечения задач из транскриптов. Отвечай ТОЛЬКО валидным JSON."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=1,
-                max_completion_tokens=800,
-                response_format={"type": "json_object"}
+            # Старый код OpenAI (закомментирован)
+            # response = self.client.chat.completions.create(
+            #     model=settings.GPT_MODEL,
+            #     messages=[
+            #         {"role": "system", "content": "Ты - ассистент для извлечения задач из транскриптов. Отвечай ТОЛЬКО валидным JSON."},
+            #         {"role": "user", "content": prompt}
+            #     ],
+            #     temperature=1,
+            #     max_completion_tokens=800,
+            #     response_format={"type": "json_object"}
+            # )
+            # result = json.loads(response.choices[0].message.content)
+
+            # Новая реализация Gemini
+            system_instruction = "Ты - ассистент для извлечения задач из транскриптов. Отвечай ТОЛЬКО валидным JSON массивом."
+            
+            # Создаем модель с system instruction для этого запроса
+            model_with_instruction = genai.GenerativeModel(
+                model_name=settings.GEMINI_MODEL,
+                system_instruction=system_instruction
+            )
+            
+            response = model_with_instruction.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=1.0,
+                    max_output_tokens=800,
+                    response_mime_type="application/json",
+                )
             )
 
-            result = json.loads(response.choices[0].message.content)
+            # Парсим JSON ответ
+            result_text = response.text.strip()
+            # Убираем markdown код блоки, если они есть
+            if result_text.startswith("```json"):
+                result_text = result_text[7:]
+            if result_text.startswith("```"):
+                result_text = result_text[3:]
+            if result_text.endswith("```"):
+                result_text = result_text[:-3]
+            result_text = result_text.strip()
+            
+            result = json.loads(result_text)
             logger.info(f"Action items extraction completed, extracted {len(result) if isinstance(result, list) else len(result.get('action_items', []))} items")
 
             if isinstance(result, dict) and "action_items" in result:
