@@ -301,7 +301,8 @@ async def get_active_processing_status(
         "stage_info": {
             "transcription": "Транскрибация аудио",
             "summarization": "Создание резюме встречи",
-            "action_items": "Извлечение задач"
+            "action_items": "Извлечение задач",
+            "pdf_generation": "Генерация PDF документа"
         }.get(processing.current_stage, None)
     }
 
@@ -412,12 +413,16 @@ async def get_meeting(
     notes = await selectors.get_meeting_notes(db, meeting_id)
     action_items = await selectors.get_meeting_action_items(db, meeting_id)
     
+    # Создать объект MeetingOut для получения PDF URL
+    meeting_out = schemas.MeetingOut.model_validate(meeting)
+    
     return schemas.MeetingDetailsOut(
-        meeting=schemas.MeetingOut.model_validate(meeting),
+        meeting=meeting_out,
         transcript=schemas.TranscriptOut.model_validate(transcript) if transcript else None,
         summary=schemas.SummaryOut.model_validate(summary) if summary else None,
         notes=[schemas.NoteOut.model_validate(note) for note in notes],
-        action_items=[schemas.ActionItemOut.model_validate(item) for item in action_items]
+        action_items=[schemas.ActionItemOut.model_validate(item) for item in action_items],
+        pdf=meeting_out.pdf_file_path  # URL уже сериализован через field_serializer
     )
 
 
@@ -858,7 +863,8 @@ async def get_processing_status(
         "stage_info": {
             "transcription": "Транскрибация аудио",
             "summarization": "Создание резюме встречи",
-            "action_items": "Извлечение задач"
+            "action_items": "Извлечение задач",
+            "pdf_generation": "Генерация PDF документа"
         }.get(processing.current_stage, None)
     }
 

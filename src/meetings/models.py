@@ -29,6 +29,7 @@ class Meeting(Base):
     duration: Mapped[int | None] = mapped_column(Integer, nullable=True)  # Хранится в секундах
     audio_file_path: Mapped[str | None] = mapped_column(String, nullable=True)
     audio_file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    pdf_file_path: Mapped[str | None] = mapped_column(String, nullable=True)
     comments: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())

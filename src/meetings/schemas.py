@@ -54,6 +54,7 @@ class MeetingOut(BaseModel):
     duration: Optional[int] = None  # Длительность в секундах
     audio_file_path: Optional[str]
     audio_file_size: Optional[int]
+    pdf_file_path: Optional[str] = None
     comments: Optional[str]
     notes: Optional[str]
     created_at: Optional[datetime]
@@ -94,6 +95,13 @@ class MeetingOut(BaseModel):
         """Генерирует полный S3 URL для аудиофайла"""
         if value:
             return storage.generate_presigned_url(value, expiration=3600)
+        return None
+    
+    @field_serializer('pdf_file_path')
+    def serialize_pdf_file_path(self, value: Optional[str], _info):
+        """Генерирует полный S3 URL для PDF файла для скачивания"""
+        if value:
+            return storage.generate_presigned_url(value, expiration=3600, as_attachment=True)
         return None
 
 
@@ -263,6 +271,7 @@ class MeetingDetailsOut(BaseModel):
     summary: Optional[SummaryOut] = None
     notes: list[NoteOut] = []
     action_items: list[ActionItemOut] = []
+    pdf: Optional[str] = None  # URL для скачивания PDF
 
     model_config = ConfigDict(from_attributes=True)
 

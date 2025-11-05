@@ -3,14 +3,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import io
 import logging
+import uuid
 
 from src.db.session import AsyncSessionLocal
 from src.meetings.models import Meeting, MeetingProcessing, Transcript, Summary
 from src.core.storage import storage
 from src.core.ai_services import ai_service
+from src.core.pdf_generator import generate_meeting_pdf
 from src.meetings import selectors
 from arq.connections import RedisSettings
 from src.core.config import settings
+import uuid
+import io
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +165,51 @@ async def process_meeting(ctx, meeting_id: int):
                             )
                             db.add(action_item)
                     await db.commit()
+            
+            # Шаг 4: Генерация PDF
+            processing.current_stage = "pdf_generation"
+            processing.progress = 95
+            await db.commit()
+            
+            logger.info(f"Starting PDF generation for meeting {meeting_id}...")
+            
+            # Получить заметки для PDF
+            notes_list = await selectors.get_meeting_notes(db, meeting_id)
+            notes_data = []
+            for note in notes_list:
+                notes_data.append({
+                    'content': note.content or '',
+                    'created_at': note.created_at
+                })
+            
+            # Получить имя организатора
+            organizer_name = None
+            if meeting.organizer:
+                organizer_name = f"{meeting.organizer.first_name} {meeting.organizer.last_name}".strip()
+            
+            # Генерировать PDF
+            pdf_buffer = generate_meeting_pdf(
+                title=meeting.title,
+                meeting_date=meeting.meeting_date,
+                duration=meeting.duration,
+                transcript=transcript_text,
+                summary=summary_text,
+                notes=notes_data,
+                organizer_name=organizer_name
+            )
+            
+            # Загрузить PDF в S3
+            pdf_path = f"meetings/{uuid.uuid4()}.pdf"
+            pdf_buffer.seek(0)  # Вернуться в начало буфера
+            pdf_file_obj = io.BytesIO(pdf_buffer.read())
+            pdf_s3_path = storage.upload_file(pdf_file_obj, pdf_path, content_type="application/pdf")
+            
+            if pdf_s3_path:
+                meeting.pdf_file_path = pdf_s3_path
+                await db.commit()
+                logger.info(f"PDF uploaded to S3: {pdf_s3_path}")
+            else:
+                logger.error(f"Failed to upload PDF to S3 for meeting {meeting_id}")
             
             # Завершить обработку
             processing.status = "completed"
