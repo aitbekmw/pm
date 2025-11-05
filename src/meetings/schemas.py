@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_serializer, ConfigDict
+from pydantic import BaseModel, field_serializer, ConfigDict, model_validator
 from typing import Optional
 from datetime import datetime
 from src.core.storage import storage
@@ -32,14 +32,17 @@ class MeetingCreate(BaseModel):
     project_id: Optional[int] = None
     meeting_date: Optional[datetime] = None
     comments: Optional[str] = None
+    notes: Optional[str] = None
+    duration: Optional[int] = None  # Длительность в секундах
 
 
 class MeetingUpdate(BaseModel):
     title: Optional[str] = None
     project_id: Optional[int] = None
     meeting_date: Optional[datetime] = None
-    duration: Optional[int] = None
+    duration: Optional[int] = None  # Длительность в секундах
     comments: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class MeetingOut(BaseModel):
@@ -48,14 +51,35 @@ class MeetingOut(BaseModel):
     project_id: Optional[int]
     organizer_id: Optional[int]
     meeting_date: datetime
-    duration: Optional[int]
+    duration: Optional[str] = None  # Формат ЧЧ:ММ:СС
     audio_file_path: Optional[str]
     audio_file_size: Optional[int]
     comments: Optional[str]
+    notes: Optional[str]
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
 
     model_config = ConfigDict(from_attributes=True)
+    
+    @model_validator(mode='before')
+    @classmethod
+    def convert_duration(cls, data):
+        """Преобразует duration из секунд в формат ЧЧ:ММ:СС перед валидацией"""
+        # Обрабатываем словарь
+        if isinstance(data, dict) and 'duration' in data and data['duration'] is not None:
+            seconds = data['duration']
+            hours = seconds // 3600
+            minutes = (seconds % 3600) // 60
+            secs = seconds % 60
+            data['duration'] = f"{hours:02d}:{minutes:02d}:{secs:02d}"
+        # Обрабатываем объект SQLAlchemy
+        elif hasattr(data, 'duration') and data.duration is not None:
+            seconds = data.duration
+            hours = seconds // 3600
+            minutes = (seconds % 3600) // 60
+            secs = seconds % 60
+            data.duration = f"{hours:02d}:{minutes:02d}:{secs:02d}"
+        return data
     
     @field_serializer('audio_file_path')
     def serialize_audio_file_path(self, value: Optional[str], _info):
@@ -71,11 +95,32 @@ class MeetingListOut(BaseModel):
     project_id: Optional[int]
     organizer_id: Optional[int]
     meeting_date: datetime
-    duration: Optional[int]
+    duration: Optional[str] = None  # Формат ЧЧ:ММ:СС
     comments: Optional[str]
+    notes: Optional[str]
     created_at: Optional[datetime]
 
     model_config = ConfigDict(from_attributes=True)
+    
+    @model_validator(mode='before')
+    @classmethod
+    def convert_duration(cls, data):
+        """Преобразует duration из секунд в формат ЧЧ:ММ:СС перед валидацией"""
+        # Обрабатываем словарь
+        if isinstance(data, dict) and 'duration' in data and data['duration'] is not None:
+            seconds = data['duration']
+            hours = seconds // 3600
+            minutes = (seconds % 3600) // 60
+            secs = seconds % 60
+            data['duration'] = f"{hours:02d}:{minutes:02d}:{secs:02d}"
+        # Обрабатываем объект SQLAlchemy
+        elif hasattr(data, 'duration') and data.duration is not None:
+            seconds = data.duration
+            hours = seconds // 3600
+            minutes = (seconds % 3600) // 60
+            secs = seconds % 60
+            data.duration = f"{hours:02d}:{minutes:02d}:{secs:02d}"
+        return data
 
 
 class MeetingListOutWithOrganizer(BaseModel):
@@ -86,11 +131,32 @@ class MeetingListOutWithOrganizer(BaseModel):
     organizer_id: Optional[int]
     organizer: Optional[OrganizerInfo] = None
     meeting_date: datetime
-    duration: Optional[int]
+    duration: Optional[str] = None  # Формат ЧЧ:ММ:СС
     comments: Optional[str]
+    notes: Optional[str]
     created_at: Optional[datetime]
 
     model_config = ConfigDict(from_attributes=True)
+    
+    @model_validator(mode='before')
+    @classmethod
+    def convert_duration(cls, data):
+        """Преобразует duration из секунд в формат ЧЧ:ММ:СС перед валидацией"""
+        # Обрабатываем словарь
+        if isinstance(data, dict) and 'duration' in data and data['duration'] is not None:
+            seconds = data['duration']
+            hours = seconds // 3600
+            minutes = (seconds % 3600) // 60
+            secs = seconds % 60
+            data['duration'] = f"{hours:02d}:{minutes:02d}:{secs:02d}"
+        # Обрабатываем объект SQLAlchemy
+        elif hasattr(data, 'duration') and data.duration is not None:
+            seconds = data.duration
+            hours = seconds // 3600
+            minutes = (seconds % 3600) // 60
+            secs = seconds % 60
+            data.duration = f"{hours:02d}:{minutes:02d}:{secs:02d}"
+        return data
     
     @property
     def organizer_name(self) -> Optional[str]:

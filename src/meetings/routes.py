@@ -22,6 +22,8 @@ async def create_meeting(
     project_id: Optional[int] = Form(None),
     meeting_date: Optional[datetime] = Form(None),
     comments: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None),
+    duration: Optional[int] = Form(None, description="Длительность в секундах"),
     audio_file: Optional[UploadFile] = File(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -48,7 +50,9 @@ async def create_meeting(
         title=title,
         project_id=project_id,
         meeting_date=meeting_date,
-        comments=comments
+        comments=comments,
+        notes=notes,
+        duration=duration
     )
     
     audio_content = None
@@ -801,8 +805,9 @@ async def get_meeting_duration(
     """Получить информацию о длительности встречи
     
     Возвращает:
-    - duration: Длительность в минутах (может быть None если не установлена)
-    - duration_seconds: Длительность в секундах
+    - duration: Длительность в секундах (может быть None если не установлена)
+    - duration_formatted: Длительность в формате ЧЧ:ММ:СС
+    - duration_minutes: Длительность в минутах (округлено)
     - audio_file_size: Размер аудио файла в байтах
     - source: Источник информации ("manual", "transcription", "unknown")
     
@@ -812,8 +817,9 @@ async def get_meeting_duration(
     Ответ:
     {
       "meeting_id": 1,
-      "duration": 45,
-      "duration_seconds": 2700,
+      "duration": 2700,
+      "duration_formatted": "00:45:00",
+      "duration_minutes": 45,
       "audio_file_size": 3456789,
       "source": "transcription"
     }
@@ -850,14 +856,22 @@ async def get_meeting_duration(
         else:
             source = "manual"
     
-    duration_seconds = None
+    duration_formatted = None
+    duration_minutes = None
     if meeting.duration:
-        duration_seconds = meeting.duration * 60
+        # Форматируем в ЧЧ:ММ:СС
+        hours = meeting.duration // 3600
+        minutes = (meeting.duration % 3600) // 60
+        seconds = meeting.duration % 60
+        duration_formatted = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        # Округляем до минут
+        duration_minutes = round(meeting.duration / 60)
     
     return {
         "meeting_id": meeting_id,
-        "duration": meeting.duration,
-        "duration_seconds": duration_seconds,
+        "duration": meeting.duration,  # В секундах
+        "duration_formatted": duration_formatted,
+        "duration_minutes": duration_minutes,
         "audio_file_size": meeting.audio_file_size,
         "source": source,
         "processing_status": processing.status if processing else "not_started"
@@ -867,23 +881,24 @@ async def get_meeting_duration(
 @router.put("/{meeting_id}/duration")
 async def update_meeting_duration(
     meeting_id: int,
-    duration_minutes: int = Query(..., ge=1, description="Длительность встречи в минутах (минимум 1 минута)"),
+    duration_seconds: int = Query(..., ge=1, description="Длительность встречи в секундах (минимум 1 секунда)"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Обновить длительность встречи вручную
     
     Параметры:
-    - duration_minutes: Длительность в минутах (целое число, минимум 1)
+    - duration_seconds: Длительность в секундах (целое число, минимум 1)
     
     Пример:
-    PUT /api/meetings/1/duration?duration_minutes=45
+    PUT /api/meetings/1/duration?duration_seconds=2700
     
     Ответ:
     {
       "meeting_id": 1,
-      "duration": 45,
-      "duration_seconds": 2700,
+      "duration": 2700,
+      "duration_formatted": "00:45:00",
+      "duration_minutes": 45,
       "message": "Duration updated successfully"
     }
     """
@@ -903,15 +918,32 @@ async def update_meeting_duration(
     
     # Обновляем длительность
     old_duration = meeting.duration
-    meeting.duration = duration_minutes
+    meeting.duration = duration_seconds
     await db.commit()
     await db.refresh(meeting)
     
+    # Форматируем новую длительность
+    hours = meeting.duration // 3600
+    minutes = (meeting.duration % 3600) // 60
+    secs = meeting.duration % 60
+    duration_formatted = f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    duration_minutes = round(meeting.duration / 60)
+    
+    # Форматируем старую длительность если была
+    old_duration_formatted = None
+    if old_duration:
+        old_hours = old_duration // 3600
+        old_minutes = (old_duration % 3600) // 60
+        old_secs = old_duration % 60
+        old_duration_formatted = f"{old_hours:02d}:{old_minutes:02d}:{old_secs:02d}"
+    
     return {
         "meeting_id": meeting_id,
-        "duration": meeting.duration,
-        "duration_seconds": meeting.duration * 60,
+        "duration": meeting.duration,  # В секундах
+        "duration_formatted": duration_formatted,
+        "duration_minutes": duration_minutes,
         "previous_duration": old_duration,
-        "message": f"Duration updated successfully from {old_duration} to {duration_minutes} minutes"
+        "previous_duration_formatted": old_duration_formatted,
+        "message": f"Duration updated successfully from {old_duration_formatted or old_duration} to {duration_formatted}"
     }
 

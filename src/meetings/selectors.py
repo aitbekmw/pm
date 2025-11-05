@@ -246,10 +246,14 @@ async def get_meetings_with_filters(
         filters.append(Meeting.meeting_date <= end_date)
     
     if min_duration is not None:
-        filters.append(Meeting.duration >= min_duration)
+        # Преобразуем минуты в секунды для сравнения
+        min_duration_seconds = int(min_duration * 60)
+        filters.append(Meeting.duration >= min_duration_seconds)
     
     if max_duration is not None:
-        filters.append(Meeting.duration <= max_duration)
+        # Преобразуем минуты в секунды для сравнения
+        max_duration_seconds = int(max_duration * 60)
+        filters.append(Meeting.duration <= max_duration_seconds)
     
     query = select(Meeting).where(and_(*filters))
     
@@ -332,10 +336,14 @@ async def get_project_meetings_with_filters(
         filters.append(Meeting.meeting_date <= end_date)
     
     if min_duration is not None:
-        filters.append(Meeting.duration >= min_duration)
+        # Преобразуем минуты в секунды для сравнения
+        min_duration_seconds = int(min_duration * 60)
+        filters.append(Meeting.duration >= min_duration_seconds)
     
     if max_duration is not None:
-        filters.append(Meeting.duration <= max_duration)
+        # Преобразуем минуты в секунды для сравнения
+        max_duration_seconds = int(max_duration * 60)
+        filters.append(Meeting.duration <= max_duration_seconds)
     
     query = select(Meeting).where(and_(*filters))
     

@@ -25,7 +25,7 @@ async def create_meeting(
     # Генерировать уникальное имя файла для S3
     audio_path = None
     audio_size = None
-    duration_minutes = None
+    duration_seconds = None
     
     if audio_file:
         file_extension = audio_filename.split('.')[-1] if audio_filename else 'mp3'
@@ -38,15 +38,19 @@ async def create_meeting(
         
         # Получить длительность аудио
         audio_bytes = audio_file.read()
-        duration_seconds = storage.get_audio_duration(audio_bytes)
-        if duration_seconds:
-            duration_minutes = duration_seconds // 60  # Конвертировать в минуты
+        audio_duration_seconds = storage.get_audio_duration(audio_bytes)
+        if audio_duration_seconds:
+            duration_seconds = audio_duration_seconds
         
         # Вернуться в начало для загрузки
         audio_file = io.BytesIO(audio_bytes)
         final_audio_path = storage.upload_file(audio_file, audio_path)
         if final_audio_path:
             audio_path = final_audio_path
+    
+    # Если duration передан из фронта, используем его (приоритет фронта)
+    if data.duration is not None:
+        duration_seconds = data.duration
     
     # Если project_id равен 0, преобразуем в None (нет проекта)
     project_id = data.project_id if data.project_id and data.project_id > 0 else None
@@ -56,8 +60,9 @@ async def create_meeting(
         project_id=project_id,
         organizer_id=user_id,
         meeting_date=data.meeting_date or datetime.now(timezone.utc),
-        duration=duration_minutes,
+        duration=duration_seconds,  # Сохраняем в секундах
         comments=data.comments,
+        notes=data.notes,
         audio_file_path=audio_path,
         audio_file_size=audio_size
     )
