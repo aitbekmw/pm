@@ -19,13 +19,23 @@ class S3Storage:
         access_key = settings.S3_ACCESS_KEY.strip()
         secret_key = settings.S3_SECRET_KEY.strip()
         
+        # Нормализуем endpoint URL (убираем trailing slash, если есть)
+        endpoint_url = settings.S3_ENDPOINT_URL.rstrip('/')
+        
         # Логируем длину ключей (без самих значений для безопасности)
-        logger.info(f"S3 initialization: endpoint={settings.S3_ENDPOINT_URL}, "
+        logger.info(f"S3 initialization: endpoint={endpoint_url}, "
                    f"access_key_length={len(access_key)}, secret_key_length={len(secret_key)}, "
                    f"bucket={settings.S3_BUCKET_NAME}, region={settings.S3_REGION}")
         
         # Для MinIO требуется path-style addressing
-        is_minio = 'minio' in settings.S3_ENDPOINT_URL.lower() or settings.S3_ENDPOINT_URL.startswith('http://')
+        # Определяем MinIO по URL (minio в имени, http/https на внутренний IP, или через прокси)
+        is_minio = (
+            'minio' in endpoint_url.lower() or 
+            endpoint_url.startswith('http://10.') or 
+            endpoint_url.startswith('http://192.168.') or
+            endpoint_url.startswith('http://172.') or
+            '/minio' in endpoint_url.lower()
+        )
         
         # Настройка конфигурации для MinIO
         if is_minio:
@@ -35,12 +45,13 @@ class S3Storage:
                     'addressing_style': 'path'
                 }
             )
+            logger.info("Using MinIO configuration with path-style addressing")
         else:
             s3_config = Config(signature_version='s3v4')
         
         self.s3_client = boto3.client(
             's3',
-            endpoint_url=settings.S3_ENDPOINT_URL,
+            endpoint_url=endpoint_url,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
             region_name=settings.S3_REGION,
