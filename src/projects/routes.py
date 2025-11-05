@@ -38,7 +38,7 @@ async def get_projects(
     db: AsyncSession = Depends(get_db)
 ):
     """Получить список проектов пользователя"""
-    projects = await selectors.get_user_projects(db, current_user.id, include_archived)
+    projects = await selectors.get_user_projects(db, current_user.id, current_user.role, include_archived)
     
     result = []
     for project in projects:
@@ -59,7 +59,7 @@ async def get_archived_projects(
     db: AsyncSession = Depends(get_db)
 ):
     """Получить список архивированных проектов"""
-    projects = await selectors.get_user_projects(db, current_user.id, include_archived=True)
+    projects = await selectors.get_user_projects(db, current_user.id, current_user.role, include_archived=True)
     archived_projects = [p for p in projects if p.is_archived]
     
     result = []
@@ -83,7 +83,7 @@ async def get_project(
 ):
     """Получить детали проекта"""
     # Проверить доступ
-    has_access = await selectors.check_user_has_project_access(db, current_user.id, project_id)
+    has_access = await selectors.check_user_has_project_access(db, current_user.id, current_user.role, project_id)
     if not has_access:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -111,16 +111,16 @@ async def get_project(
 async def update_project(
     project_id: int,
     data: schemas.ProjectUpdate,
-    current_user: User = Depends(require_pm_or_manager),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Обновить проект (только PM или Manager)"""
-    # Проверить доступ
-    has_access = await selectors.check_user_has_project_access(db, current_user.id, project_id)
-    if not has_access:
+    """Обновить проект (только Manager или PM владелец проекта)"""
+    # Проверить права на редактирование
+    can_edit = await selectors.check_user_can_edit_project(db, current_user.id, current_user.role, project_id)
+    if not can_edit:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied to this project"
+            detail="Access denied. Only Manager or PM project owner can edit project"
         )
     
     project = await services.update_project(db, project_id, data)
@@ -143,15 +143,15 @@ async def update_project(
 @router.post("/{project_id}/archive", status_code=status.HTTP_204_NO_CONTENT)
 async def archive_project(
     project_id: int,
-    current_user: User = Depends(require_pm_or_manager),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Архивировать проект (только PM или Manager)"""
-    has_access = await selectors.check_user_has_project_access(db, current_user.id, project_id)
-    if not has_access:
+    """Архивировать проект (только Manager или PM владелец проекта)"""
+    can_edit = await selectors.check_user_can_edit_project(db, current_user.id, current_user.role, project_id)
+    if not can_edit:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied to this project"
+            detail="Access denied. Only Manager or PM project owner can archive project"
         )
     
     success = await services.archive_project(db, project_id)
@@ -165,15 +165,15 @@ async def archive_project(
 @router.post("/{project_id}/unarchive", status_code=status.HTTP_204_NO_CONTENT)
 async def unarchive_project(
     project_id: int,
-    current_user: User = Depends(require_pm_or_manager),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Разархивировать проект (только PM или Manager)"""
-    has_access = await selectors.check_user_has_project_access(db, current_user.id, project_id)
-    if not has_access:
+    """Разархивировать проект (только Manager или PM владелец проекта)"""
+    can_edit = await selectors.check_user_can_edit_project(db, current_user.id, current_user.role, project_id)
+    if not can_edit:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied to this project"
+            detail="Access denied. Only Manager or PM project owner can unarchive project"
         )
     
     success = await services.unarchive_project(db, project_id)
@@ -187,15 +187,15 @@ async def unarchive_project(
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_project(
     project_id: int,
-    current_user: User = Depends(require_pm_or_manager),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Удалить проект (только PM или Manager)"""
-    has_access = await selectors.check_user_has_project_access(db, current_user.id, project_id)
-    if not has_access:
+    """Удалить проект (только Manager или PM владелец проекта)"""
+    can_edit = await selectors.check_user_can_edit_project(db, current_user.id, current_user.role, project_id)
+    if not can_edit:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied to this project"
+            detail="Access denied. Only Manager or PM project owner can delete project"
         )
     
     success = await services.delete_project(db, project_id)
@@ -210,15 +210,15 @@ async def delete_project(
 async def grant_access(
     project_id: int,
     data: schemas.ProjectAccessCreate,
-    current_user: User = Depends(require_pm_or_manager),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Дать доступ пользователю к проекту (только PM или Manager)"""
-    has_access = await selectors.check_user_has_project_access(db, current_user.id, project_id)
-    if not has_access:
+    """Дать доступ пользователю к проекту (только Manager или PM владелец проекта)"""
+    can_grant = await selectors.check_user_can_grant_access(db, current_user.id, current_user.role, project_id)
+    if not can_grant:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied to this project"
+            detail="Access denied. Only Manager or PM project owner can grant access"
         )
     
     # Проверить существует ли проект
@@ -239,8 +239,14 @@ async def get_project_access(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Получить список доступов к проекту"""
-    has_access = await selectors.check_user_has_project_access(db, current_user.id, project_id)
+    """Получить список доступов к проекту (только для Manager или пользователей с доступом к проекту)"""
+    # Manager видит все доступы
+    if current_user.role == "Manager":
+        accesses = await selectors.get_project_access(db, project_id)
+        return accesses
+    
+    # Остальные видят доступы только к проектам, куда их добавили
+    has_access = await selectors.check_user_has_project_access(db, current_user.id, current_user.role, project_id)
     if not has_access:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -255,15 +261,15 @@ async def get_project_access(
 async def revoke_access(
     project_id: int,
     user_id: int,
-    current_user: User = Depends(require_pm_or_manager),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Отозвать доступ пользователя к проекту (только PM или Manager)"""
-    has_access = await selectors.check_user_has_project_access(db, current_user.id, project_id)
-    if not has_access:
+    """Отозвать доступ пользователя к проекту (только Manager или PM владелец проекта)"""
+    can_grant = await selectors.check_user_can_grant_access(db, current_user.id, current_user.role, project_id)
+    if not can_grant:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied to this project"
+            detail="Access denied. Only Manager or PM project owner can revoke access"
         )
     
     success = await services.revoke_project_access(db, project_id, user_id)

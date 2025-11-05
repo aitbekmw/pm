@@ -40,18 +40,30 @@ async def get_project_meetings(
 async def get_uncategorized_meetings(
     db: AsyncSession,
     user_id: int,
+    user_role: str,
     skip: int = 0,
     limit: int = 50
 ) -> list[Meeting]:
-    """Получить некатегорированные встречи пользователя"""
-    result = await db.execute(
-        select(Meeting)
-        .where(
+    """Получить некатегорированные встречи
+    
+    Manager видит все некатегорированные встречи.
+    PM видит только свои некатегорированные встречи.
+    Остальные видят только свои некатегорированные встречи.
+    """
+    if user_role == "Manager":
+        # Manager видит все некатегорированные встречи
+        query = select(Meeting).where(Meeting.project_id.is_(None))
+    else:
+        # PM и остальные видят только свои некатегорированные встречи
+        query = select(Meeting).where(
             and_(
                 Meeting.project_id.is_(None),
                 Meeting.organizer_id == user_id
             )
         )
+    
+    result = await db.execute(
+        query
         .options(joinedload(Meeting.organizer))
         .order_by(Meeting.meeting_date.desc())
         .offset(skip)
@@ -176,17 +188,55 @@ async def search_meetings(
     query: str,
     project_id: Optional[int] = None,
     user_id: Optional[int] = None,
+    user_role: Optional[str] = None,
     skip: int = 0,
     limit: int = 50
 ) -> list[Meeting]:
-    """Поиск встреч по названию"""
+    """Поиск встреч по названию
+    
+    Если указан project_id, возвращаются встречи только этого проекта (проверка доступа должна быть выполнена в роуте).
+    Если user_role == "Manager", возвращаются все встречи.
+    Иначе возвращаются только встречи, которые пользователь может видеть.
+    """
     filters = [Meeting.title.ilike(f"%{query}%")]
     
     if project_id is not None:
         filters.append(Meeting.project_id == project_id)
     
     if user_id is not None:
-        filters.append(Meeting.organizer_id == user_id)
+        # Если user_role == "Manager", не фильтруем по user_id
+        if user_role != "Manager":
+            # Если project_id не указан, фильтруем по доступным проектам
+            if project_id is None and user_role:
+                from src.projects import selectors as project_selectors
+                user_projects = await project_selectors.get_user_projects(db, user_id, user_role, include_archived=True)
+                project_ids = [p.id for p in user_projects]
+                
+                if user_role == "PM":
+                    # PM видит встречи своих проектов и свои встречи
+                    if project_ids:
+                        filters.append(
+                            or_(
+                                Meeting.project_id.in_(project_ids),
+                                Meeting.organizer_id == user_id
+                            )
+                        )
+                    else:
+                        filters.append(Meeting.organizer_id == user_id)
+                else:
+                    # Остальные видят только встречи проектов, куда их добавили, и свои встречи
+                    if project_ids:
+                        filters.append(
+                            or_(
+                                Meeting.project_id.in_(project_ids),
+                                Meeting.organizer_id == user_id
+                            )
+                        )
+                    else:
+                        filters.append(Meeting.organizer_id == user_id)
+            else:
+                # Если project_id указан и user_role не Manager, проверяем только свои встречи
+                filters.append(Meeting.organizer_id == user_id)
     
     result = await db.execute(
         select(Meeting)
@@ -202,6 +252,7 @@ async def search_meetings(
 async def get_meetings_with_filters(
     db: AsyncSession,
     user_id: int,
+    user_role: str,
     search_query: Optional[str] = None,
     project_id: Optional[int] = None,
     organizer_id: Optional[int] = None,
@@ -216,6 +267,10 @@ async def get_meetings_with_filters(
 ) -> tuple[list[Meeting], int] | list[Meeting]:
     """
     Получить встречи с фильтрацией и сортировкой.
+    
+    Manager видит все встречи.
+    PM видит встречи своих проектов и свои встречи.
+    Остальные видят только встречи проектов, куда их добавили, и свои встречи.
     
     Параметры фильтрации:
     - search_query: поиск по названию встречи
@@ -233,7 +288,39 @@ async def get_meetings_with_filters(
     
     Пример: "date_desc,duration_asc"
     """
-    filters = [Meeting.organizer_id == user_id]
+    from src.projects import selectors as project_selectors
+    
+    if user_role == "Manager":
+        # Manager видит все встречи
+        filters = []
+    elif user_role == "PM":
+        # PM видит встречи своих проектов и свои встречи
+        # Получаем список проектов пользователя
+        user_projects = await project_selectors.get_user_projects(db, user_id, user_role, include_archived=True)
+        project_ids = [p.id for p in user_projects]
+        
+        filters = [
+            or_(
+                Meeting.project_id.in_(project_ids),
+                Meeting.organizer_id == user_id
+            )
+        ]
+    else:
+        # Остальные видят только встречи проектов, куда их добавили, и свои встречи
+        # Получаем список проектов пользователя
+        user_projects = await project_selectors.get_user_projects(db, user_id, user_role, include_archived=True)
+        project_ids = [p.id for p in user_projects]
+        
+        if project_ids:
+            filters = [
+                or_(
+                    Meeting.project_id.in_(project_ids),
+                    Meeting.organizer_id == user_id
+                )
+            ]
+        else:
+            # Если нет проектов, видим только свои встречи
+            filters = [Meeting.organizer_id == user_id]
     
     if search_query:
         filters.append(Meeting.title.ilike(f"%{search_query}%"))
@@ -260,7 +347,7 @@ async def get_meetings_with_filters(
         max_duration_seconds = int(max_duration * 60)
         filters.append(Meeting.duration <= max_duration_seconds)
     
-    query = select(Meeting).where(and_(*filters))
+    query = select(Meeting).where(and_(*filters)) if filters else select(Meeting)
     
     # Загружаем организатора с встречей для отображения полной информации
     query = query.options(joinedload(Meeting.organizer))
@@ -280,7 +367,11 @@ async def get_meetings_with_filters(
     
     # Получаем общее количество до apply offset/limit
     if return_count:
-        count_result = await db.execute(select(func.count(Meeting.id)).where(and_(*filters)))
+        count_filters = filters if filters else []
+        count_query = select(func.count(Meeting.id))
+        if count_filters:
+            count_query = count_query.where(and_(*count_filters))
+        count_result = await db.execute(count_query)
         total = count_result.scalar()
     
     query = query.offset(skip).limit(limit)
