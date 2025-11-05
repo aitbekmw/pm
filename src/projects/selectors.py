@@ -34,19 +34,25 @@ async def get_user_projects(
         return list(result.scalars().all())
     elif user_role == "PM":
         # PM видит только свои проекты (где он создатель или имеет роль PM в ProjectAccess)
+        # Используем подзапрос вместо JOIN с DISTINCT, чтобы избежать проблем с JSON полями
+        pm_access_subquery = (
+            select(ProjectAccess.project_id)
+            .where(
+                and_(
+                    ProjectAccess.user_id == user_id,
+                    ProjectAccess.role == "PM"
+                )
+            )
+        )
+        
         query = (
             select(Project)
-            .join(ProjectAccess, ProjectAccess.project_id == Project.id, isouter=True)
             .where(
                 or_(
                     Project.created_by == user_id,
-                    and_(
-                        ProjectAccess.user_id == user_id,
-                        ProjectAccess.role == "PM"
-                    )
+                    Project.id.in_(pm_access_subquery)
                 )
             )
-            .distinct()
         )
         if not include_archived:
             query = query.where(Project.is_archived == False)
