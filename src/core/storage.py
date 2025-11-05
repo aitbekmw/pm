@@ -15,13 +15,36 @@ logger = logging.getLogger(__name__)
 
 class S3Storage:
     def __init__(self):
+        # Обрезаем пробелы в ключах (частая причина SignatureDoesNotMatch)
+        access_key = settings.S3_ACCESS_KEY.strip()
+        secret_key = settings.S3_SECRET_KEY.strip()
+        
+        # Логируем длину ключей (без самих значений для безопасности)
+        logger.info(f"S3 initialization: endpoint={settings.S3_ENDPOINT_URL}, "
+                   f"access_key_length={len(access_key)}, secret_key_length={len(secret_key)}, "
+                   f"bucket={settings.S3_BUCKET_NAME}, region={settings.S3_REGION}")
+        
+        # Для MinIO требуется path-style addressing
+        is_minio = 'minio' in settings.S3_ENDPOINT_URL.lower() or settings.S3_ENDPOINT_URL.startswith('http://')
+        
+        # Настройка конфигурации для MinIO
+        if is_minio:
+            s3_config = Config(
+                signature_version='s3v4',
+                s3={
+                    'addressing_style': 'path'
+                }
+            )
+        else:
+            s3_config = Config(signature_version='s3v4')
+        
         self.s3_client = boto3.client(
             's3',
             endpoint_url=settings.S3_ENDPOINT_URL,
-            aws_access_key_id=settings.S3_ACCESS_KEY,
-            aws_secret_access_key=settings.S3_SECRET_KEY,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
             region_name=settings.S3_REGION,
-            config=Config(signature_version='s3v4')
+            config=s3_config
         )
         self.bucket_name = settings.S3_BUCKET_NAME
 
@@ -81,16 +104,39 @@ class S3Storage:
             logger.info(f"File uploaded successfully to S3: {object_name}")
             return object_name
         except ClientError as e:
-            logger.error(f"Error uploading file to S3: {e}")
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            error_message = e.response.get('Error', {}).get('Message', str(e))
+            logger.error(
+                f"Error uploading file to S3: {error_code} - {error_message}. "
+                f"Bucket: {self.bucket_name}, Key: {object_name}"
+            )
             return None
 
     def download_file(self, object_name: str) -> Optional[bytes]:
         """Скачать файл из S3"""
         try:
+            logger.debug(f"Downloading file from S3: bucket={self.bucket_name}, key={object_name}")
             response = self.s3_client.get_object(Bucket=self.bucket_name, Key=object_name)
-            return response['Body'].read()
+            data = response['Body'].read()
+            logger.info(f"Successfully downloaded file from S3: {object_name}, size={len(data)} bytes")
+            return data
         except ClientError as e:
-            logger.error(f"Error downloading file from S3: {e}")
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            error_message = e.response.get('Error', {}).get('Message', str(e))
+            logger.error(
+                f"Error downloading file from S3: {error_code} - {error_message}. "
+                f"Bucket: {self.bucket_name}, Key: {object_name}, "
+                f"Endpoint: {settings.S3_ENDPOINT_URL}"
+            )
+            # Дополнительная информация для диагностики SignatureDoesNotMatch
+            if error_code == 'SignatureDoesNotMatch':
+                logger.error(
+                    "SignatureDoesNotMatch - возможные причины:\n"
+                    "- Пробелы в начале/конце S3_ACCESS_KEY или S3_SECRET_KEY (должны быть обрезаны автоматически)\n"
+                    "- Неправильные значения ключей\n"
+                    "- Проблемы с кодировкой ключей\n"
+                    "- Неправильный endpoint URL"
+                )
             return None
 
     def delete_file(self, object_name: str) -> bool:
