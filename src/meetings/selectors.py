@@ -152,7 +152,12 @@ async def get_active_processing_meeting(
     db: AsyncSession,
     user_id: int
 ) -> Optional[MeetingProcessing]:
-    """Получить встречу, которая находится в процессе обработки для пользователя"""
+    """Получить встречу, которая находится в процессе обработки для пользователя
+    
+    Автоматически очищает статусы, которые активны более 20 минут (предполагается, что процесс оборвался).
+    """
+    from datetime import datetime, timezone, timedelta
+    
     result = await db.execute(
         select(MeetingProcessing)
         .join(Meeting, MeetingProcessing.meeting_id == Meeting.id)
@@ -164,7 +169,23 @@ async def get_active_processing_meeting(
         )
         .order_by(MeetingProcessing.started_at.desc())
     )
-    return result.scalars().first()
+    processing = result.scalars().first()
+    
+    # Проверяем, не застрял ли статус обработки более 20 минут
+    if processing and processing.started_at:
+        elapsed_minutes = (datetime.now(timezone.utc) - processing.started_at).total_seconds() / 60
+        
+        if elapsed_minutes > 20:
+            # Автоматически очищаем застрявший статус
+            processing.status = "failed"
+            processing.error_message = f"Обработка прервана: процесс не отвечал более 20 минут"
+            processing.completed_at = datetime.now(timezone.utc)
+            await db.commit()
+            await db.refresh(processing)
+            # Возвращаем None, так как статус больше не активен
+            return None
+    
+    return processing
 
 
 async def get_active_meeting_with_details(

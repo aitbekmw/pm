@@ -243,6 +243,8 @@ async def get_active_processing_status(
     Возвращает встречу, которая в данный момент обрабатывается (статус 'processing').
     Если активной обработки нет, возвращает not_started.
     
+    Автоматически очищает статусы, которые активны более 20 минут (предполагается, что процесс оборвался).
+    
     Ответ:
     {
       "meeting_id": 1,
@@ -257,6 +259,8 @@ async def get_active_processing_status(
       "stage_info": "Транскрибация аудио"
     }
     """
+    from datetime import datetime, timezone, timedelta
+    
     processing = await selectors.get_active_processing_meeting(db, current_user.id)
     
     if not processing:
@@ -278,7 +282,6 @@ async def get_active_processing_status(
     # Вычисляем приблизительное время завершения
     estimated_completion = None
     if processing.status == "processing" and processing.started_at and processing.progress > 0:
-        from datetime import datetime, timezone, timedelta
         elapsed = (datetime.now(timezone.utc) - processing.started_at).total_seconds()
         if processing.progress > 0:
             total_estimated = (elapsed / processing.progress) * 100
@@ -818,6 +821,19 @@ async def get_processing_status(
             "estimated_completion": None,
             "stage_info": None
         }
+    
+    # Проверяем, не застрял ли статус обработки более 20 минут
+    if processing.status == "processing" and processing.started_at:
+        from datetime import datetime, timezone
+        elapsed_minutes = (datetime.now(timezone.utc) - processing.started_at).total_seconds() / 60
+        
+        if elapsed_minutes > 20:
+            # Автоматически очищаем застрявший статус
+            processing.status = "failed"
+            processing.error_message = f"Обработка прервана: процесс не отвечал более 20 минут"
+            processing.completed_at = datetime.now(timezone.utc)
+            await db.commit()
+            await db.refresh(processing)
     
     # Вычисляем приблизительное время завершения
     estimated_completion = None
