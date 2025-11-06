@@ -235,16 +235,16 @@ async def delete_action_item(db: AsyncSession, action_item_id: int) -> bool:
 
 
 async def get_audio_download_url(db: AsyncSession, meeting_id: int, as_attachment: bool = False) -> Optional[str]:
-    """Получить URL для скачивания аудио
+    """Получить прямую ссылку на аудио через nginx прокси
     
     Args:
         db: database session
         meeting_id: ID встречи
-        as_attachment: если True, возвращает ссылку с Content-Disposition: attachment
+        as_attachment: параметр игнорируется для прямых ссылок (оставлен для совместимости)
     """
     meeting = await selectors.get_meeting_by_id(db, meeting_id)
     if not meeting or not meeting.audio_file_path:
         return None
     
-    return storage.generate_presigned_url(meeting.audio_file_path, expiration=3600, as_attachment=as_attachment)
+    return storage.generate_direct_url(meeting.audio_file_path)
 

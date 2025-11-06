@@ -91,16 +91,16 @@ class MeetingOut(BaseModel):
     
     @field_serializer('audio_file_path')
     def serialize_audio_file_path(self, value: Optional[str], _info):
-        """Генерирует полный S3 URL для аудиофайла"""
+        """Генерирует прямую ссылку на аудиофайл через nginx прокси"""
         if value:
-            return storage.generate_presigned_url(value, expiration=3600)
+            return storage.generate_direct_url(value)
         return None
     
     @field_serializer('pdf_file_path')
     def serialize_pdf_file_path(self, value: Optional[str], _info):
-        """Генерирует полный S3 URL для PDF файла для скачивания"""
+        """Генерирует прямую ссылку на PDF файл через nginx прокси"""
         if value:
-            return storage.generate_presigned_url(value, expiration=3600, as_attachment=True)
+            return storage.generate_direct_url(value)
         return None
 
 
