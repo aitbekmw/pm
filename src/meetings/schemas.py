@@ -56,7 +56,6 @@ class MeetingOut(BaseModel):
     audio_file_size: Optional[int]
     pdf_file_path: Optional[str] = None
     comments: Optional[str]
-    notes: Optional[str]
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
 
@@ -113,7 +112,6 @@ class MeetingListOut(BaseModel):
     meeting_date: datetime
     duration: Optional[int] = None  # Длительность в секундах
     comments: Optional[str]
-    notes: Optional[str]
     created_at: Optional[datetime]
 
     model_config = ConfigDict(from_attributes=True)
@@ -158,7 +156,6 @@ class MeetingListOutWithOrganizer(BaseModel):
     meeting_date: datetime
     duration: Optional[int] = None  # Длительность в секундах
     comments: Optional[str]
-    notes: Optional[str]
     created_at: Optional[datetime]
 
     model_config = ConfigDict(from_attributes=True)
@@ -269,7 +266,7 @@ class MeetingDetailsOut(BaseModel):
     meeting: MeetingOut
     transcript: Optional[TranscriptOut] = None
     summary: Optional[SummaryOut] = None
-    notes: list[NoteOut] = []
+    notes: Optional[str] = None
     action_items: list[ActionItemOut] = []
     pdf: Optional[str] = None  # URL для скачивания PDF
 

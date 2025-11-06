@@ -410,7 +410,6 @@ async def get_meeting(
     # Получить связанные данные
     transcript = await selectors.get_meeting_transcript(db, meeting_id)
     summary = await selectors.get_meeting_summary(db, meeting_id)
-    notes = await selectors.get_meeting_notes(db, meeting_id)
     action_items = await selectors.get_meeting_action_items(db, meeting_id)
     
     # Создать объект MeetingOut для получения PDF URL
@@ -420,7 +419,7 @@ async def get_meeting(
         meeting=meeting_out,
         transcript=schemas.TranscriptOut.model_validate(transcript) if transcript else None,
         summary=schemas.SummaryOut.model_validate(summary) if summary else None,
-        notes=[schemas.NoteOut.model_validate(note) for note in notes],
+        notes=meeting.notes,
         action_items=[schemas.ActionItemOut.model_validate(item) for item in action_items],
         pdf=meeting_out.pdf_file_path  # URL уже сериализован через field_serializer
     )
