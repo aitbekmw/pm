@@ -4,6 +4,7 @@ from botocore.exceptions import ClientError
 from typing import Optional, BinaryIO
 import io
 from datetime import datetime, timedelta
+from urllib.parse import quote
 import librosa
 import soundfile as sf
 import logging
@@ -195,6 +196,27 @@ class S3Storage:
             return True
         except ClientError:
             return False
+
+    def generate_direct_url(self, object_name: str) -> Optional[str]:
+        """Генерирует прямую ссылку на файл через S3 endpoint
+        
+        Args:
+            object_name: имя объекта в S3
+            
+        Returns:
+            Полный URL к файлу через S3 endpoint
+        """
+        if not object_name:
+            return None
+        
+        # Получаем базовый URL из настроек
+        base_url = settings.S3_ENDPOINT_URL.rstrip('/')
+        
+        # URL-кодируем путь к файлу для безопасной передачи в URL
+        encoded_path = quote(object_name, safe='/')
+        
+        # Формируем полный URL: endpoint/bucket/path
+        return f"{base_url}/{self.bucket_name}/{encoded_path}"
 
 
 storage = S3Storage()
