@@ -171,7 +171,7 @@ class AIService:
                 prompt,
                 generation_config=genai.types.GenerationConfig(
                     temperature=1.0,
-                    max_output_tokens=1000,
+                    max_output_tokens=2500,
                 )
             )
 
@@ -231,7 +231,7 @@ class AIService:
                 prompt,
                 generation_config=genai.types.GenerationConfig(
                     temperature=1.0,
-                    max_output_tokens=800,
+                    max_output_tokens=2500,
                     response_mime_type="application/json",
                 )
             )
