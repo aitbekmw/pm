@@ -51,7 +51,7 @@ class S3Storage:
         
         self.s3_client = boto3.client(
             's3',
-            endpoint_url=endpoint_url,
+            endpoint_url="http://127.0.0.1:9000",
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
             region_name=settings.S3_REGION,
@@ -159,25 +159,6 @@ class S3Storage:
         except ClientError as e:
             logger.error(f"Error deleting file from S3: {e}")
             return False
-
-    def generate_direct_url(self, object_name: str) -> Optional[str]:
-        """Сгенерировать прямую ссылку на файл через nginx прокси (без query параметров)
-        
-        Args:
-            object_name: имя объекта в S3
-        """
-        try:
-            # Используем S3_ENDPOINT_URL напрямую
-            endpoint_url = settings.S3_ENDPOINT_URL.rstrip('/')
-            
-            # Формируем прямую ссылку: {endpoint_url}/{bucket_name}/{object_name}
-            direct_url = f"{endpoint_url}/{self.bucket_name}/{object_name}"
-            
-            logger.debug(f"Direct URL generated for: {object_name} -> {direct_url}")
-            return direct_url
-        except Exception as e:
-            logger.error(f"Error generating direct URL: {e}")
-            return None
 
     def generate_presigned_url(self, object_name: str, expiration: int = 3600, as_attachment: bool = False) -> Optional[str]:
         """Сгенерировать временную ссылку на файл
