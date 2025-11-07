@@ -6,6 +6,7 @@ import logging
 import uuid
 
 from src.db.session import AsyncSessionLocal
+from src.db.base import import_all_models
 from src.meetings.models import Meeting, MeetingProcessing, Transcript, Summary
 from src.core.storage import storage
 from src.core.ai_services import ai_service
@@ -15,6 +16,9 @@ from arq.connections import RedisSettings
 from src.core.config import settings
 import uuid
 import io
+
+# Импортируем все модели для правильной инициализации ForeignKey
+import_all_models()
 
 logger = logging.getLogger(__name__)
 
@@ -229,10 +233,18 @@ async def process_meeting(ctx, meeting_id: int):
         except Exception as e:
             # Обработка ошибок
             logger.error(f"Error processing meeting {meeting_id}: {e}", exc_info=True)
-            processing.status = "failed"
-            processing.error_message = str(e)
-            processing.completed_at = datetime.now(timezone.utc)
-            await db.commit()
+            try:
+                # Откатываем транзакцию перед обновлением статуса
+                await db.rollback()
+                
+                # Обновляем статус обработки
+                processing.status = "failed"
+                processing.error_message = str(e)
+                processing.completed_at = datetime.now(timezone.utc)
+                await db.commit()
+            except Exception as commit_error:
+                logger.error(f"Error updating processing status: {commit_error}", exc_info=True)
+                await db.rollback()
             
             return {
                 "error": str(e),

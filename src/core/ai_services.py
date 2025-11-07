@@ -3,6 +3,7 @@
 from google import generativeai as genai
 from typing import Optional, BinaryIO
 import json
+import re
 import httpx
 import logging
 import tempfile
@@ -246,7 +247,37 @@ class AIService:
                 result_text = result_text[:-3]
             result_text = result_text.strip()
             
-            result = json.loads(result_text)
+            # Попытка исправить незавершенные строки в JSON
+            # Ищем незавершенные строки (строки, которые не закрыты кавычками)
+            # Заменяем незавершенные строки на пустые строки
+            result_text = re.sub(r':\s*"([^"]*?)$', r': ""', result_text, flags=re.MULTILINE)
+            # Удаляем незавершенные строки в конце
+            result_text = re.sub(r',\s*"([^"]*?)$', '', result_text, flags=re.MULTILINE)
+            
+            try:
+                result = json.loads(result_text)
+            except json.JSONDecodeError as json_err:
+                logger.warning(f"JSON decode error: {json_err}. Attempting to fix...")
+                # Попытка найти и исправить проблемные места
+                # Удаляем последнюю незавершенную строку, если она есть
+                lines = result_text.split('\n')
+                fixed_lines = []
+                for i, line in enumerate(lines):
+                    # Если строка содержит незавершенную строку (начинается с " но не заканчивается "),
+                    # и это не последняя строка массива/объекта
+                    if ':' in line and line.count('"') % 2 != 0:
+                        # Пытаемся закрыть строку
+                        if not line.rstrip().endswith('"') and not line.rstrip().endswith('",'):
+                            line = line.rstrip().rstrip(',') + '",'
+                    fixed_lines.append(line)
+                result_text = '\n'.join(fixed_lines)
+                
+                try:
+                    result = json.loads(result_text)
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to parse JSON after fix attempt. Raw text: {result_text[:500]}")
+                    return []
+            
             logger.info(f"Action items extraction completed, extracted {len(result) if isinstance(result, list) else len(result.get('action_items', []))} items")
 
             if isinstance(result, dict) and "action_items" in result:
