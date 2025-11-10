@@ -51,7 +51,7 @@ async def me(request: Request, db: AsyncSession = Depends(get_db)):
     user = await services.get_user_by_session(db, session_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
-    return user
+    return UserOut.model_validate(user)
 
 
 @router.get("/roles", response_model=dict)
@@ -100,7 +100,8 @@ async def list_users(
     # Используем q если передан, иначе используем search
     search_query = q or search
     users, total = await services.get_users(db, skip=skip, limit=limit, search=search_query)
-    return UserList(users=users, total=total)
+    user_out_list = [UserOut.model_validate(user) for user in users]
+    return UserList(users=user_out_list, total=total)
 
 
 @router.put("/{user_id}/role", response_model=UserOut)
@@ -118,7 +119,7 @@ async def update_user_role(
     if not updated_user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not update user")
     
-    return updated_user
+    return UserOut.model_validate(updated_user)
 
 
 @router.get("/{user_id}", response_model=UserOut)
@@ -132,4 +133,4 @@ async def get_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     
-    return user
+    return UserOut.model_validate(user)

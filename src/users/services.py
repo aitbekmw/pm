@@ -210,6 +210,7 @@ async def update_user_role(db: AsyncSession, user_id: int, role: str, current_us
     # Обновляем роль
     user.role = role
     await db.commit()
+    await db.refresh(user)
     
     return user
 
