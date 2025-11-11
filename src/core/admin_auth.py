@@ -10,10 +10,10 @@ from src.users.services import _ldap_authenticate
 
 
 class AdminAuthenticationBackend(AuthenticationBackend):
-    """Кастомный authentication backend для админки с проверкой роли Manager"""
+    """Кастомный authentication backend для админки с проверкой роли Admin"""
     
     async def login(self, request: Request) -> bool:
-        """Авторизация в админку через AD с проверкой роли Manager"""
+        """Авторизация в админку через AD с проверкой роли Admin"""
         form = await request.form()
         username = form.get("username")
         password = form.get("password")
@@ -36,8 +36,8 @@ class AdminAuthenticationBackend(AuthenticationBackend):
                 if not user.is_active:
                     return False
                 
-                # КРИТИЧЕСКАЯ ПРОВЕРКА: только Manager может войти в админку
-                if user.role != "Manager":
+                # КРИТИЧЕСКАЯ ПРОВЕРКА: только Admin может войти в админку
+                if user.role != "Admin":
                     return False
                 
                 request.session.update({
@@ -65,7 +65,7 @@ class AdminAuthenticationBackend(AuthenticationBackend):
         if not request.session.get("authenticated"):
             return False
         
-        if request.session.get("role") != "Manager":
+        if request.session.get("role") != "Admin":
             return False
         
         return True

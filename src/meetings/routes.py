@@ -387,8 +387,8 @@ async def get_meeting(
     
     # Проверить доступ
     if meeting.project_id:
-        # Manager видит все встречи
-        if current_user.role == "Manager":
+        # Admin видит все встречи
+        if current_user.role == "Admin":
             pass  # Доступ разрешен
         else:
             has_access = await project_selectors.check_user_has_project_access(
@@ -400,8 +400,8 @@ async def get_meeting(
                     detail="Access denied to this meeting"
                 )
     elif meeting.organizer_id != current_user.id:
-        # Если встреча не в проекте, только организатор или Manager может видеть
-        if current_user.role != "Manager":
+        # Если встреча не в проекте, только организатор или Admin может видеть
+        if current_user.role != "Admin":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied to this meeting"
@@ -440,25 +440,25 @@ async def update_meeting(
             detail="Meeting not found"
         )
     
-    # Только организатор, Manager или PM владелец проекта может изменять
+    # Только организатор, Admin или Manager владелец проекта может изменять
     if meeting.organizer_id == current_user.id:
         pass  # Организатор может изменять
-    elif current_user.role == "Manager":
-        pass  # Manager может изменять все встречи
-    elif meeting.project_id and current_user.role == "PM":
-        # PM может изменять встречи своих проектов
+    elif current_user.role == "Admin":
+        pass  # Admin может изменять все встречи
+    elif meeting.project_id and current_user.role == "Manager":
+        # Manager может изменять встречи своих проектов
         can_edit = await project_selectors.check_user_can_edit_project(
             db, current_user.id, current_user.role, meeting.project_id
         )
         if not can_edit:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only organizer, Manager or PM project owner can update meeting"
+                detail="Only organizer, Admin or Manager project owner can update meeting"
             )
     else:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only organizer, Manager or PM project owner can update meeting"
+            detail="Only organizer, Admin or Manager project owner can update meeting"
         )
     
     updated_meeting = await services.update_meeting(db, meeting_id, data)
@@ -479,25 +479,25 @@ async def delete_meeting(
             detail="Meeting not found"
         )
     
-    # Только организатор, Manager или PM владелец проекта может удалять
+    # Только организатор, Admin или Manager владелец проекта может удалять
     if meeting.organizer_id == current_user.id:
         pass  # Организатор может удалять
-    elif current_user.role == "Manager":
-        pass  # Manager может удалять все встречи
-    elif meeting.project_id and current_user.role == "PM":
-        # PM может удалять встречи своих проектов
+    elif current_user.role == "Admin":
+        pass  # Admin может удалять все встречи
+    elif meeting.project_id and current_user.role == "Manager":
+        # Manager может удалять встречи своих проектов
         can_edit = await project_selectors.check_user_can_edit_project(
             db, current_user.id, current_user.role, meeting.project_id
         )
         if not can_edit:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only organizer, Manager or PM project owner can delete meeting"
+                detail="Only organizer, Admin or Manager project owner can delete meeting"
             )
     else:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only organizer, Manager or PM project owner can delete meeting"
+            detail="Only organizer, Admin or Manager project owner can delete meeting"
         )
     
     await services.delete_meeting(db, meeting_id)
@@ -518,25 +518,25 @@ async def move_meeting(
             detail="Meeting not found"
         )
     
-    # Только организатор, Manager или PM владелец проекта может перемещать
+    # Только организатор, Admin или Manager владелец проекта может перемещать
     if meeting.organizer_id == current_user.id:
         pass  # Организатор может перемещать
-    elif current_user.role == "Manager":
-        pass  # Manager может перемещать все встречи
-    elif meeting.project_id and current_user.role == "PM":
-        # PM может перемещать встречи своих проектов
+    elif current_user.role == "Admin":
+        pass  # Admin может перемещать все встречи
+    elif meeting.project_id and current_user.role == "Manager":
+        # Manager может перемещать встречи своих проектов
         can_edit = await project_selectors.check_user_can_edit_project(
             db, current_user.id, current_user.role, meeting.project_id
         )
         if not can_edit:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only organizer, Manager or PM project owner can move meeting"
+                detail="Only organizer, Admin or Manager project owner can move meeting"
             )
     else:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only organizer, Manager or PM project owner can move meeting"
+            detail="Only organizer, Admin or Manager project owner can move meeting"
         )
     
     # Проверить доступ к новому проекту
@@ -981,25 +981,25 @@ async def update_meeting_duration(
             detail="Meeting not found"
         )
     
-    # Только организатор, Manager или PM владелец проекта может обновлять длительность
+    # Только организатор, Admin или Manager владелец проекта может обновлять длительность
     if meeting.organizer_id == current_user.id:
         pass  # Организатор может обновлять
-    elif current_user.role == "Manager":
-        pass  # Manager может обновлять все встречи
-    elif meeting.project_id and current_user.role == "PM":
-        # PM может обновлять встречи своих проектов
+    elif current_user.role == "Admin":
+        pass  # Admin может обновлять все встречи
+    elif meeting.project_id and current_user.role == "Manager":
+        # Manager может обновлять встречи своих проектов
         can_edit = await project_selectors.check_user_can_edit_project(
             db, current_user.id, current_user.role, meeting.project_id
         )
         if not can_edit:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only organizer, Manager or PM project owner can update meeting duration"
+                detail="Only organizer, Admin or Manager project owner can update meeting duration"
             )
     else:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only organizer, Manager or PM project owner can update meeting duration"
+            detail="Only organizer, Admin or Manager project owner can update meeting duration"
         )
     
     # Обновляем длительность

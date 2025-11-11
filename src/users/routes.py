@@ -60,9 +60,9 @@ async def get_roles(
 ):
     """Получить список доступных ролей в системе"""
     available_roles = [
-        "PM",
-        "Member",
         "Manager",
+        "Member",
+        "Admin",
         "Backend Dev",
         "Frontend Dev",
         "Designer",
@@ -111,8 +111,8 @@ async def update_user_role(
     current_user: UserOut = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Обновляет роль пользователя (только для Manager)"""
-    if current_user.role != "Manager":
+    """Обновляет роль пользователя (только для Admin)"""
+    if current_user.role != "Admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     
     updated_user = await services.update_user_role(db, user_id, role_data.role, current_user)

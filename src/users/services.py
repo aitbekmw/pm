@@ -190,13 +190,13 @@ async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100, search: O
 
 
 async def update_user_role(db: AsyncSession, user_id: int, role: str, current_user: User) -> Optional[User]:
-    """Обновляет роль пользователя (только для Manager)"""
+    """Обновляет роль пользователя (только для Admin)"""
     # Проверяем права доступа
-    if current_user.role != "Manager":
+    if current_user.role != "Admin":
         return None
     
     # Валидируем роль
-    valid_roles = ["Member", "PM", "Manager", "Backend Dev", "Frontend Dev", "Designer", "QA"]
+    valid_roles = ["Member", "Manager", "Admin", "Backend Dev", "Frontend Dev", "Designer", "QA"]
     if role not in valid_roles:
         return None
     

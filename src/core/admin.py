@@ -8,9 +8,9 @@ from starlette.middleware.sessions import SessionMiddleware
 from wtforms import SelectField
 
 USER_ROLE_CHOICES = [
-    ("PM", "PM"),
-    ("Member", "Member"),
     ("Manager", "Manager"),
+    ("Member", "Member"),
+    ("Admin", "Admin"),
     ("Backend Dev", "Backend Dev"),
     ("Frontend Dev", "Frontend Dev"),
     ("Designer", "Designer"),

@@ -46,15 +46,15 @@ async def get_uncategorized_meetings(
 ) -> list[Meeting]:
     """Получить некатегорированные встречи
     
-    Manager видит все некатегорированные встречи.
-    PM видит только свои некатегорированные встречи.
+    Admin видит все некатегорированные встречи.
+    Manager видит только свои некатегорированные встречи.
     Остальные видят только свои некатегорированные встречи.
     """
-    if user_role == "Manager":
-        # Manager видит все некатегорированные встречи
+    if user_role == "Admin":
+        # Admin видит все некатегорированные встречи
         query = select(Meeting).where(Meeting.project_id.is_(None))
     else:
-        # PM и остальные видят только свои некатегорированные встречи
+        # Manager и остальные видят только свои некатегорированные встречи
         query = select(Meeting).where(
             and_(
                 Meeting.project_id.is_(None),
@@ -216,7 +216,7 @@ async def search_meetings(
     """Поиск встреч по названию
     
     Если указан project_id, возвращаются встречи только этого проекта (проверка доступа должна быть выполнена в роуте).
-    Если user_role == "Manager", возвращаются все встречи.
+    Если user_role == "Admin", возвращаются все встречи.
     Иначе возвращаются только встречи, которые пользователь может видеть.
     """
     filters = [Meeting.title.ilike(f"%{query}%")]
@@ -225,16 +225,16 @@ async def search_meetings(
         filters.append(Meeting.project_id == project_id)
     
     if user_id is not None:
-        # Если user_role == "Manager", не фильтруем по user_id
-        if user_role != "Manager":
+        # Если user_role == "Admin", не фильтруем по user_id
+        if user_role != "Admin":
             # Если project_id не указан, фильтруем по доступным проектам
             if project_id is None and user_role:
                 from src.projects import selectors as project_selectors
                 user_projects = await project_selectors.get_user_projects(db, user_id, user_role, include_archived=True)
                 project_ids = [p.id for p in user_projects]
                 
-                if user_role == "PM":
-                    # PM видит встречи своих проектов и свои встречи
+                if user_role == "Manager":
+                    # Manager видит встречи своих проектов и свои встречи
                     if project_ids:
                         filters.append(
                             or_(
@@ -256,7 +256,7 @@ async def search_meetings(
                     else:
                         filters.append(Meeting.organizer_id == user_id)
             else:
-                # Если project_id указан и user_role не Manager, проверяем только свои встречи
+                # Если project_id указан и user_role не Admin, проверяем только свои встречи
                 filters.append(Meeting.organizer_id == user_id)
     
     result = await db.execute(
@@ -289,8 +289,8 @@ async def get_meetings_with_filters(
     """
     Получить встречи с фильтрацией и сортировкой.
     
-    Manager видит все встречи.
-    PM видит встречи своих проектов и свои встречи.
+    Admin видит все встречи.
+    Manager видит встречи своих проектов и свои встречи.
     Остальные видят только встречи проектов, куда их добавили, и свои встречи.
     
     Параметры фильтрации:
@@ -311,11 +311,11 @@ async def get_meetings_with_filters(
     """
     from src.projects import selectors as project_selectors
     
-    if user_role == "Manager":
-        # Manager видит все встречи
+    if user_role == "Admin":
+        # Admin видит все встречи
         filters = []
-    elif user_role == "PM":
-        # PM видит встречи своих проектов и свои встречи
+    elif user_role == "Manager":
+        # Manager видит встречи своих проектов и свои встречи
         # Получаем список проектов пользователя
         user_projects = await project_selectors.get_user_projects(db, user_id, user_role, include_archived=True)
         project_ids = [p.id for p in user_projects]

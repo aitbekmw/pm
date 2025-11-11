@@ -29,7 +29,7 @@ async def create_project(
     access = ProjectAccess(
         project_id=project.id,
         user_id=user_id,
-        role="PM",
+        role="Manager",
         granted_at=datetime.now(timezone.utc)
     )
     db.add(access)
