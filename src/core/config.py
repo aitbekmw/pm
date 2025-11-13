@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     # Redis for ARQ
     REDIS_URL: str = Field(default="redis://redis:6379", env="REDIS_URL")
     
+    # Sentry
+    SENTRY_DSN: Optional[str] = Field(default=None, env="SENTRY_DSN")
+    SENTRY_ENVIRONMENT: str = Field(default="production", env="SENTRY_ENVIRONMENT")
+    SENTRY_TRACES_SAMPLE_RATE: float = Field(default=0.005, env="SENTRY_TRACES_SAMPLE_RATE")
+    
     model_config = ConfigDict(env_file=".env", case_sensitive=False)
 
 settings = Settings()
