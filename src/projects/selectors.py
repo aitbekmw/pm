@@ -206,3 +206,78 @@ async def get_user_project_access(
         )
     )
     return result.scalars().first()
+
+
+async def search_projects(
+    db: AsyncSession,
+    query: str,
+    user_id: int,
+    user_role: str,
+    include_archived: bool = False
+) -> list[Project]:
+    """Поиск проектов по названию
+    
+    Учитывает права доступа пользователя:
+    - Admin видит все проекты
+    - Manager видит только свои проекты (где он создатель или имеет роль Manager)
+    - Остальные видят только проекты, куда их добавили
+    
+    Args:
+        query: Поисковый запрос (поиск по имени проекта)
+        user_id: ID пользователя
+        user_role: Роль пользователя
+        include_archived: Включать ли архивированные проекты в поиск
+    """
+    search_filter = Project.name.ilike(f"%{query}%")
+    
+    if user_role == "Admin":
+        # Admin видит все проекты
+        query_obj = select(Project).where(search_filter)
+        if not include_archived:
+            query_obj = query_obj.where(Project.is_archived == False)
+        result = await db.execute(query_obj.order_by(Project.created_at.desc()))
+        return list(result.scalars().all())
+    elif user_role == "Manager":
+        # Manager видит только свои проекты (где он создатель или имеет роль Manager)
+        manager_access_subquery = (
+            select(ProjectAccess.project_id)
+            .where(
+                and_(
+                    ProjectAccess.user_id == user_id,
+                    ProjectAccess.role == "Manager"
+                )
+            )
+        )
+        
+        query_obj = (
+            select(Project)
+            .where(
+                and_(
+                    search_filter,
+                    or_(
+                        Project.created_by == user_id,
+                        Project.id.in_(manager_access_subquery)
+                    )
+                )
+            )
+        )
+        if not include_archived:
+            query_obj = query_obj.where(Project.is_archived == False)
+        result = await db.execute(query_obj.order_by(Project.created_at.desc()))
+        return list(result.scalars().all())
+    else:
+        # Остальные видят только проекты, куда их добавили
+        query_obj = (
+            select(Project)
+            .join(ProjectAccess, ProjectAccess.project_id == Project.id)
+            .where(
+                and_(
+                    ProjectAccess.user_id == user_id,
+                    search_filter
+                )
+            )
+        )
+        if not include_archived:
+            query_obj = query_obj.where(Project.is_archived == False)
+        result = await db.execute(query_obj.order_by(Project.created_at.desc()))
+        return list(result.scalars().all())

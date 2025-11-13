@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+from typing import List, Optional
 
 from src.db.deps import get_db
 from src.users.models import User
@@ -55,12 +55,25 @@ async def get_projects(
 
 @router.get("/archived", response_model=List[schemas.ProjectListOut])
 async def get_archived_projects(
+    q: Optional[str] = Query(None, min_length=1, description="Поисковый запрос по названию проекта"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Получить список архивированных проектов"""
-    projects = await selectors.get_user_projects(db, current_user.id, current_user.role, include_archived=True)
-    archived_projects = [p for p in projects if p.is_archived]
+    """Получить список архивированных проектов
+    
+    Если указан параметр q, выполняется поиск по названию среди архивированных проектов.
+    """
+    if q:
+        # Использовать поиск с включением архивов
+        projects = await selectors.search_projects(
+            db, q, current_user.id, current_user.role, include_archived=True
+        )
+        # Фильтруем только архивированные
+        archived_projects = [p for p in projects if p.is_archived]
+    else:
+        # Получить все архивированные проекты
+        projects = await selectors.get_user_projects(db, current_user.id, current_user.role, include_archived=True)
+        archived_projects = [p for p in projects if p.is_archived]
     
     result = []
     for project in archived_projects:

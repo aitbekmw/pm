@@ -25,14 +25,30 @@ async def create_project(
     db.add(project)
     await db.flush()
     
-    # Автоматически добавить создателя как участника
-    access = ProjectAccess(
+    # Автоматически добавить создателя как участника с ролью Manager
+    creator_access = ProjectAccess(
         project_id=project.id,
         user_id=user_id,
         role="Manager",
         granted_at=datetime.now(timezone.utc)
     )
-    db.add(access)
+    db.add(creator_access)
+    
+    # Добавить пользователей из запроса
+    if data.users:
+        for user_data in data.users:
+            # Пропускаем создателя, так как он уже добавлен
+            if user_data.id == user_id:
+                continue
+            
+            access = ProjectAccess(
+                project_id=project.id,
+                user_id=user_data.id,
+                role=user_data.role,
+                granted_at=datetime.now(timezone.utc)
+            )
+            db.add(access)
+    
     await db.commit()
     await db.refresh(project)
     

@@ -10,8 +10,14 @@ class ProjectBase(BaseModel):
     jira_data: Optional[dict] = None
 
 
+class ProjectUserCreate(BaseModel):
+    """Пользователь для добавления в проект при создании"""
+    id: int
+    role: Optional[str] = None
+
+
 class ProjectCreate(ProjectBase):
-    pass
+    users: Optional[list[ProjectUserCreate]] = None
 
 
 class ProjectUpdate(BaseModel):
