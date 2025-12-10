@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import delete
+from sqlalchemy import delete, select
+from sqlalchemy.orm import joinedload
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -128,8 +129,14 @@ async def grant_project_access(
         if role:
             existing_access.role = role
             await db.commit()
-            await db.refresh(existing_access)
-        return existing_access
+        
+        # Перезагрузить объект с загрузкой связанного user
+        result = await db.execute(
+            select(ProjectAccess)
+            .where(ProjectAccess.id == existing_access.id)
+            .options(joinedload(ProjectAccess.user))
+        )
+        return result.scalars().one()
     
     # Создать новый доступ
     access = ProjectAccess(
@@ -140,8 +147,14 @@ async def grant_project_access(
     )
     db.add(access)
     await db.commit()
-    await db.refresh(access)
-    return access
+    
+    # Перезагрузить объект с загрузкой связанного user
+    result = await db.execute(
+        select(ProjectAccess)
+        .where(ProjectAccess.id == access.id)
+        .options(joinedload(ProjectAccess.user))
+    )
+    return result.scalars().one()
 
 
 async def revoke_project_access(
