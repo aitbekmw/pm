@@ -22,7 +22,7 @@ async def get_user_projects(
     """Получить все проекты пользователя
     
     Admin видит все проекты.
-    Manager видит только свои проекты (где он создатель или имеет роль Manager).
+    Manager видит проекты, где он создатель или куда его добавили.
     Остальные видят только проекты, куда их добавили.
     """
     if user_role == "Admin":
@@ -33,16 +33,11 @@ async def get_user_projects(
         result = await db.execute(query.order_by(Project.created_at.desc()))
         return list(result.scalars().all())
     elif user_role == "Manager":
-        # Manager видит только свои проекты (где он создатель или имеет роль Manager в ProjectAccess)
+        # Manager видит проекты, где он создатель или куда его добавили (любая запись в ProjectAccess)
         # Используем подзапрос вместо JOIN с DISTINCT, чтобы избежать проблем с JSON полями
         manager_access_subquery = (
             select(ProjectAccess.project_id)
-            .where(
-                and_(
-                    ProjectAccess.user_id == user_id,
-                    ProjectAccess.role == "Manager"
-                )
-            )
+            .where(ProjectAccess.user_id == user_id)
         )
         
         query = (
@@ -98,7 +93,7 @@ async def check_user_has_project_access(
     """Проверить имеет ли пользователь доступ к проекту (на чтение)
     
     Admin всегда имеет доступ ко всем проектам.
-    Manager имеет доступ к своим проектам (где он создатель или имеет роль Manager).
+    Manager имеет доступ к проектам, где он создатель или куда его добавили.
     Остальные имеют доступ только к проектам, куда их добавили.
     """
     if user_role == "Admin":
@@ -111,14 +106,12 @@ async def check_user_has_project_access(
         return False
     
     if user_role == "Manager":
-        # Manager видит проекты, где он создатель или имеет роль Manager в ProjectAccess
+        # Manager видит проекты, где он создатель или куда его добавили (любая запись в ProjectAccess)
         if project.created_by == user_id:
             return True
         
         access = await get_user_project_access(db, user_id, project_id)
-        if access and access.role == "Manager":
-            return True
-        return False
+        return access is not None
     else:
         # Остальные видят только проекты, куда их добавили
         access = await get_user_project_access(db, user_id, project_id)
@@ -219,7 +212,7 @@ async def search_projects(
     
     Учитывает права доступа пользователя:
     - Admin видит все проекты
-    - Manager видит только свои проекты (где он создатель или имеет роль Manager)
+    - Manager видит проекты, где он создатель или куда его добавили
     - Остальные видят только проекты, куда их добавили
     
     Args:
@@ -238,15 +231,10 @@ async def search_projects(
         result = await db.execute(query_obj.order_by(Project.created_at.desc()))
         return list(result.scalars().all())
     elif user_role == "Manager":
-        # Manager видит только свои проекты (где он создатель или имеет роль Manager)
+        # Manager видит проекты, где он создатель или куда его добавили (любая запись в ProjectAccess)
         manager_access_subquery = (
             select(ProjectAccess.project_id)
-            .where(
-                and_(
-                    ProjectAccess.user_id == user_id,
-                    ProjectAccess.role == "Manager"
-                )
-            )
+            .where(ProjectAccess.user_id == user_id)
         )
         
         query_obj = (
