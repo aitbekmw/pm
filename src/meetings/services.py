@@ -55,10 +55,29 @@ async def create_meeting(
     # Если project_id равен 0, преобразуем в None (нет проекта)
     project_id = data.project_id if data.project_id and data.project_id > 0 else None
     
+    # Определяем company_id
+    company_id = None
+    if project_id:
+        # Если встреча привязана к проекту, берем company_id проекта
+        from src.projects.models import Project
+        project_result = await db.execute(select(Project).where(Project.id == project_id))
+        project = project_result.scalars().first()
+        if project:
+            company_id = project.company_id
+    
+    if not company_id:
+        # Если нет проекта или у проекта нет company_id, берем у организатора
+        from src.users.models import User
+        user_result = await db.execute(select(User).where(User.id == user_id))
+        user = user_result.scalars().first()
+        if user:
+            company_id = user.company_id
+
     meeting = Meeting(
         title=data.title,
         project_id=project_id,
         organizer_id=user_id,
+        company_id=company_id,
         meeting_date=data.meeting_date or datetime.now(timezone.utc),
         duration=duration_seconds,  # Сохраняем в секундах
         comments=data.comments,

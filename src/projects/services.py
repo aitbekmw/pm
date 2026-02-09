@@ -7,6 +7,7 @@ from typing import Optional
 from src.projects.models import Project, ProjectAccess
 from src.projects.schemas import ProjectCreate, ProjectUpdate
 from src.projects import selectors
+from src.users.models import User
 
 
 async def create_project(
@@ -15,12 +16,18 @@ async def create_project(
     user_id: int
 ) -> Project:
     """Создать новый проект"""
+    # Получить пользователя для наследования company_id
+    user_result = await db.execute(select(User).where(User.id == user_id))
+    user = user_result.scalars().first()
+    company_id = user.company_id if user else None
+
     project = Project(
         name=data.name,
         description=data.description,
         confluence_data=data.confluence_data,
         jira_data=data.jira_data,
         created_by=user_id,
+        company_id=company_id,
         is_archived=False
     )
     db.add(project)

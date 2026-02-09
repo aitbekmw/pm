@@ -1,5 +1,9 @@
-from sqlalchemy import String, Integer, Boolean, DateTime, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import String, Integer, Boolean, DateTime, func, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.companies.models import Company
 
 from src.db.base import Base
 
@@ -13,10 +17,14 @@ class User(Base):
     last_name: Mapped[str] = mapped_column(String, nullable=False)
     role: Mapped[str] = mapped_column(String, nullable=False)  # Manager | Member | Admin | Backend Dev | Frontend Dev | Designer | QA
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id"), nullable=True)  # TODO: make NOT NULL after backfill
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+    # Relationship
+    company: Mapped["Company | None"] = relationship("Company", back_populates="users", lazy="select")
 
 
 class Session(Base):

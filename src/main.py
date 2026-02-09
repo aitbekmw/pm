@@ -12,7 +12,7 @@ from src.users.routes import router as users_router
 from src.projects.routes import router as projects_router
 from src.meetings.routes import router as meetings_router
 from src.notifications.routes import router as notifications_router
-
+from src.companies.routes import router as companies_router
 
 # Initialize Sentry before logging setup
 if settings.SENTRY_DSN:
@@ -50,6 +50,7 @@ app.include_router(users_router, prefix=settings.api_prefix)
 app.include_router(projects_router, prefix=settings.api_prefix)
 app.include_router(meetings_router, prefix=settings.api_prefix)
 app.include_router(notifications_router, prefix=settings.api_prefix)
+app.include_router(companies_router, prefix=settings.api_prefix)
 
 @app.get("/")
 async def root():

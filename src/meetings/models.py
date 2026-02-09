@@ -16,6 +16,7 @@ from src.db.base import Base
 
 if TYPE_CHECKING:
     from src.users.models import User
+    from src.companies.models import Company
 
 
 class Meeting(Base):
@@ -32,6 +33,7 @@ class Meeting(Base):
     pdf_file_path: Mapped[str | None] = mapped_column(String, nullable=True)
     comments: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id"), nullable=True)  # TODO: make NOT NULL after backfill
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -39,6 +41,7 @@ class Meeting(Base):
     
     # Relationship для загрузки организатора
     organizer: Mapped["User | None"] = relationship("User", foreign_keys=[organizer_id], lazy="select")
+    company: Mapped["Company | None"] = relationship("Company", back_populates="meetings", lazy="select")
 
 
 class MeetingProcessing(Base):
