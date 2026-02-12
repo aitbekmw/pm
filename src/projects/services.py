@@ -155,6 +155,19 @@ async def grant_project_access(
     db.add(access)
     await db.commit()
     
+    # Отправка уведомления пользователю
+    from src.notifications import services as notification_services
+    project = await selectors.get_project_by_id(db, project_id)
+    if project:
+        await notification_services.create_notification(
+            db=db,
+            user_id=user_id,
+            type="added_to_project",
+            title="Вас добавили в проект",
+            message=f"Вас добавили в проект {project.name}",
+            project_id=project_id
+        )
+    
     # Перезагрузить объект с загрузкой связанного user
     result = await db.execute(
         select(ProjectAccess)

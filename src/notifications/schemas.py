@@ -7,6 +7,7 @@ class NotificationOut(BaseModel):
     id: int
     user_id: Optional[int]
     meeting_id: Optional[int]
+    project_id: Optional[int]
     type: Optional[str]
     title: Optional[str]
     message: Optional[str]
@@ -20,6 +21,7 @@ class NotificationOut(BaseModel):
 class NotificationCreate(BaseModel):
     user_id: int
     meeting_id: Optional[int] = None
+    project_id: Optional[int] = None
     type: str
     title: str
     message: Optional[str] = None

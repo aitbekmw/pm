@@ -26,6 +26,7 @@ async def create_meeting(
     audio_path = None
     audio_size = None
     duration_seconds = None
+    user = None # Initialize user variable
     
     if audio_file:
         file_extension = audio_filename.split('.')[-1] if audio_filename else 'mp3'
@@ -89,6 +90,45 @@ async def create_meeting(
     db.add(meeting)
     await db.commit()
     await db.refresh(meeting)
+    
+    # Отправка уведомлений участникам проекта
+    if project_id:
+        from src.projects import selectors as project_selectors
+        from src.notifications import services as notification_services
+        
+        # Получаем участников проекта
+        project_members = await project_selectors.get_project_access(db, project_id)
+        
+        # Получаем имя организатора
+        organizer_name = "Unknown"
+        if not user: # user might have been fetched above
+            user_result = await db.execute(select(User).where(User.id == user_id))
+            user = user_result.scalars().first()
+        
+        if user:
+            organizer_name = f"{user.first_name} {user.last_name}"
+            
+        # Получаем название проекта
+        project_name = "Unknown"
+        if not project: # project might have been fetched above
+            project_result = await db.execute(select(Project).where(Project.id == project_id))
+            project = project_result.scalars().first()
+            
+        if project:
+            project_name = project.name
+            
+        # Отправляем уведомления всем участникам, кроме организатора
+        for access in project_members:
+            if access.user_id != user_id:
+                await notification_services.create_notification(
+                    db=db,
+                    user_id=access.user_id,
+                    type="new_meeting",
+                    title="Новая встреча",
+                    message=f"{organizer_name} загрузил(а) встречу в проект {project_name}",
+                    meeting_id=meeting.id,
+                    project_id=project_id
+                )
     
     return meeting
 

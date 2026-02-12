@@ -11,12 +11,14 @@ async def create_notification(
     type: str,
     title: str,
     message: Optional[str] = None,
-    meeting_id: Optional[int] = None
+    meeting_id: Optional[int] = None,
+    project_id: Optional[int] = None
 ) -> Notification:
     """Создать уведомление"""
     notification = Notification(
         user_id=user_id,
         meeting_id=meeting_id,
+        project_id=project_id,
         type=type,
         title=title,
         message=message,
