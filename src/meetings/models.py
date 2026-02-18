@@ -28,6 +28,7 @@ class Meeting(Base):
     organizer_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     meeting_date: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
     duration: Mapped[int | None] = mapped_column(Integer, nullable=True)  # Хранится в секундах
+    importance: Mapped[str] = mapped_column(String, default="low", nullable=False)  # low | middle | high
     audio_file_path: Mapped[str | None] = mapped_column(String, nullable=True)
     audio_file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     pdf_file_path: Mapped[str | None] = mapped_column(String, nullable=True)
