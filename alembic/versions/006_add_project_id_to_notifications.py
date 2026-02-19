@@ -1,6 +1,6 @@
 """add project_id to notifications
 
-Revision ID: e152f4d2c963
+Revision ID: 006_add_project_id_to_notifications
 Revises: 005_add_company_entity
 Create Date: 2026-02-12 15:50:00.000000
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'e152f4d2c963'
+revision: str = '006_add_project_id_to_notifications'
 down_revision: Union[str, None] = '005_add_company_entity'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
