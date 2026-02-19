@@ -25,6 +25,7 @@ class MeetingBase(BaseModel):
     meeting_date: datetime
     duration: Optional[int] = None
     comments: Optional[str] = None
+    importance: str = "low"  # low | middle | high
 
 
 class MeetingCreate(BaseModel):
@@ -34,6 +35,7 @@ class MeetingCreate(BaseModel):
     comments: Optional[str] = None
     notes: Optional[str] = None
     duration: Optional[int] = None  # Длительность в секундах
+    importance: str = "low"
 
 
 class MeetingUpdate(BaseModel):
@@ -43,6 +45,7 @@ class MeetingUpdate(BaseModel):
     duration: Optional[int] = None  # Длительность в секундах
     comments: Optional[str] = None
     notes: Optional[str] = None
+    importance: Optional[str] = None
 
 
 class MeetingOut(BaseModel):
@@ -52,6 +55,7 @@ class MeetingOut(BaseModel):
     organizer_name: Optional[str] = None
     meeting_date: datetime
     duration: Optional[int] = None  # Длительность в секундах
+    importance: str
     audio_file_path: Optional[str]
     audio_file_size: Optional[int]
     pdf_file_path: Optional[str] = None
@@ -111,6 +115,7 @@ class MeetingListOut(BaseModel):
     organizer_name: Optional[str] = None
     meeting_date: datetime
     duration: Optional[int] = None  # Длительность в секундах
+    importance: str
     comments: Optional[str]
     created_at: Optional[datetime]
 
@@ -155,6 +160,7 @@ class MeetingListOutWithOrganizer(BaseModel):
     organizer_name: Optional[str] = None  # Имя организатора для удобства
     meeting_date: datetime
     duration: Optional[int] = None  # Длительность в секундах
+    importance: str
     comments: Optional[str]
     created_at: Optional[datetime]
 

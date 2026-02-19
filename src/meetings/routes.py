@@ -24,6 +24,7 @@ async def create_meeting(
     comments: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
     duration: Optional[int] = Form(None, description="Длительность в секундах"),
+    importance: str = Form("low", regex="^(low|middle|high)$", description="Важность встречи: low, middle, high"),
     audio_file: Optional[UploadFile] = File(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -52,7 +53,8 @@ async def create_meeting(
         meeting_date=meeting_date,
         comments=comments,
         notes=notes,
-        duration=duration
+        duration=duration,
+        importance=importance
     )
     
     audio_content = None
@@ -89,6 +91,7 @@ async def get_meetings(
     max_duration: Optional[float] = Query(None, ge=0, description="Максимальная длительность в минутах (поддерживаются decimals, e.g. 0.5)"),
     sort_date: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по дате"),
     sort_duration: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по длительности"),
+    sort_importance: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по важности"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     current_user: User = Depends(get_current_user),
@@ -108,7 +111,8 @@ async def get_meetings(
     Сортировка (несколько полей одновременно):
     - sort_date=asc|desc: сортировка по дате
     - sort_duration=asc|desc: сортировка по длительности
-    - Можно использовать оба параметра одновременно: ?sort_date=desc&sort_duration=asc
+    - sort_importance=asc|desc: сортировка по важности (low->high или high->low)
+    - Можно использовать оба параметра одновременно: ?sort_importance=desc&sort_date=desc
     
     Ответ в формате DRF (Django REST Framework):
     {
@@ -120,6 +124,8 @@ async def get_meetings(
     """
     # Построить sort_by из отдельных параметров
     sort_fields = []
+    if sort_importance:
+        sort_fields.append(f"importance_{sort_importance}")
     if sort_date:
         sort_fields.append(f"date_{sort_date}")
     if sort_duration:
