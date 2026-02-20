@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta, timezone
 import secrets
 from typing import Optional
+from urllib.parse import urlencode
 
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, func, or_
 
@@ -219,3 +221,85 @@ async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
     """Получает пользователя по ID"""
     result = await db.execute(select(User).where(User.id == user_id))
     return result.scalars().first()
+
+
+def get_google_oauth_url() -> str:
+    """Формирует URL для редиректа пользователя на страницу авторизации Google"""
+    params = {
+        "client_id": settings.GOOGLE_CLIENT_ID,
+        "redirect_uri": settings.GOOGLE_REDIRECT_URI,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "access_type": "offline",
+        "prompt": "select_account",
+    }
+    return f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
+
+
+async def exchange_google_code(code: str) -> Optional[dict]:
+    """Обменивает code от Google на access_token и получает данные пользователя"""
+    async with httpx.AsyncClient() as client:
+        # Обмениваем code на токены
+        token_response = await client.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "code": code,
+                "client_id": settings.GOOGLE_CLIENT_ID,
+                "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                "redirect_uri": settings.GOOGLE_REDIRECT_URI,
+                "grant_type": "authorization_code",
+            },
+        )
+        if token_response.status_code != 200:
+            return None
+
+        token_data = token_response.json()
+        access_token = token_data.get("access_token")
+        if not access_token:
+            return None
+
+        # Получаем данные пользователя из Google
+        userinfo_response = await client.get(
+            "https://www.googleapis.com/oauth2/v2/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        if userinfo_response.status_code != 200:
+            return None
+
+        return userinfo_response.json()
+
+
+async def login_with_google(db: AsyncSession, google_user: dict) -> Optional[str]:
+    """Находит или создаёт пользователя по данным Google и создаёт сессию"""
+    email = google_user.get("email")
+    if not email:
+        return None
+
+    # Используем email как ad_account для Google-пользователей
+    result = await db.execute(select(User).where(User.ad_account == email))
+    user: Optional[User] = result.scalars().first()
+
+    if user is None:
+        user = User(
+            ad_account=email,
+            first_name=google_user.get("given_name") or email.split("@")[0],
+            last_name=google_user.get("family_name") or "",
+            role="Member",
+            is_active=True,
+        )
+        db.add(user)
+        await db.flush()
+    else:
+        new_first_name = google_user.get("given_name") or email.split("@")[0]
+        new_last_name = google_user.get("family_name") or ""
+        if user.first_name != new_first_name or user.last_name != new_last_name:
+            user.first_name = new_first_name
+            user.last_name = new_last_name
+            await db.flush()
+
+    session_id = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=settings.SESSION_TTL_DAYS)
+    db.add(Session(session_id=session_id, user_id=user.id, expires_at=expires_at))
+    await db.commit()
+    return session_id
+

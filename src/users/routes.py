@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Response, Request, HTTPException, status, Query
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
@@ -41,6 +42,53 @@ async def logout(request: Request, response: Response, db: AsyncSession = Depend
     if session_id:
         await services.logout(db, session_id)
     response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+
+
+@router.get("/login/google")
+async def google_login():
+    """Редирект пользователя на страницу авторизации Google"""
+    if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google OAuth is not configured"
+        )
+    url = services.get_google_oauth_url()
+    return RedirectResponse(url=url)
+
+
+@router.get("/auth/google/callback")
+async def google_callback(
+    code: Optional[str] = Query(None),
+    error: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Redirect URL для Google OAuth — получает code от Google и создаёт сессию"""
+    if error:
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error={error}")
+
+    if not code:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing code")
+
+    google_user = await services.exchange_google_code(code)
+    if not google_user:
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error=google_auth_failed")
+
+    session_id = await services.login_with_google(db, google_user)
+    if not session_id:
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error=user_creation_failed")
+
+    response = RedirectResponse(url=f"{settings.FRONTEND_URL}/")
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=session_id,
+        max_age=COOKIE_MAX_AGE,
+        httponly=True,
+        secure=not settings.debug,
+        samesite="lax",
+        path="/",
+        domain=settings.COOKIE_DOMAIN,
+    )
+    return response
 
 
 @router.get("/me", response_model=UserOut)
