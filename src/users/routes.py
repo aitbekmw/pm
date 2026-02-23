@@ -2,12 +2,14 @@ from fastapi import APIRouter, Depends, Response, Request, HTTPException, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
+from urllib.parse import urlencode
 
 from src.db.deps import get_db
 from src.users import services
 from src.users.schemas import LoginRequest, LoginResponse, UserOut, UserUpdateRole, UserList
 from src.core.config import settings
 from src.core.permissions import get_current_user
+from src.core.exceptions import UnauthorizedDomainError
 
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -73,11 +75,16 @@ async def google_callback(
     if not google_user:
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error=google_auth_failed")
 
-    session_id = await services.login_with_google(db, google_user)
+    try:
+        session_id = await services.login_with_google(db, google_user)
+    except UnauthorizedDomainError as e:
+        error_msg = urlencode({"error": "unauthorized_domain", "message": str(e)})
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?{error_msg}")
+
     if not session_id:
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error=user_creation_failed")
 
-    response = RedirectResponse(url=f"{settings.FRONTEND_URL}/")
+    response = RedirectResponse(url=f"{settings.FRONTEND_URL}/", status_code=302)
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=session_id,

@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
@@ -13,6 +14,8 @@ from src.projects.routes import router as projects_router
 from src.meetings.routes import router as meetings_router
 from src.notifications.routes import router as notifications_router
 from src.companies.routes import router as companies_router
+from src.companies.services import seed_default_companies
+from src.db.session import AsyncSessionLocal
 
 # Initialize Sentry before logging setup
 if settings.SENTRY_DSN:
@@ -29,9 +32,19 @@ if settings.SENTRY_DSN:
 
 setup_logging()
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Наполняем таблицу компаний дефолтными значениями если она пуста
+    async with AsyncSessionLocal() as db:
+        await seed_default_companies(db)
+    yield
+
+
 app = FastAPI(
     title=settings.app_name,
     debug=settings.debug,
+    lifespan=lifespan,
 )
 
 # CORS middleware

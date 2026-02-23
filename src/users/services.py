@@ -11,6 +11,8 @@ from ldap3 import Server, Connection, ALL, NTLM
 
 from src.core.config import settings
 from src.users.models import User, Session
+from src.companies.services import get_company_id_by_slug
+from src.core.exceptions import UnauthorizedDomainError
 
 
 def _ldap_authenticate(username: str, password: str) -> Optional[dict]:
@@ -104,29 +106,39 @@ async def login_with_ad(db: AsyncSession, username: str, password: str) -> Optio
     if ad_info is None:
         return None
 
+    # AD-пользователи всегда принадлежат MDigital
+    mdigital_id = await get_company_id_by_slug(db, "mdigital")
+
     # Find or create user by ad_account
     result = await db.execute(select(User).where(User.ad_account == username))
     user: Optional[User] = result.scalars().first()
     if user is None:
-        # Создаем нового пользователя с ролью Member по умолчанию
         user = User(
             ad_account=username,
             first_name=ad_info.get("first_name") or username,
             last_name=ad_info.get("last_name") or "",
-            role="Member",  # Всегда Member по умолчанию
+            role="Member",
             is_active=True,
+            company_id=mdigital_id,
         )
         db.add(user)
         await db.flush()
     else:
-        # Обновляем только имя и фамилию, если они изменились в AD
-        # Роль остается той, что была назначена в системе
         new_first_name = ad_info.get("first_name") or username
         new_last_name = ad_info.get("last_name") or ""
-        
+        changed = False
+
         if user.first_name != new_first_name or user.last_name != new_last_name:
             user.first_name = new_first_name
             user.last_name = new_last_name
+            changed = True
+
+        # Проставляем компанию если ещё не задана
+        if user.company_id is None and mdigital_id is not None:
+            user.company_id = mdigital_id
+            changed = True
+
+        if changed:
             await db.flush()
 
     # Create session
@@ -275,6 +287,14 @@ async def login_with_google(db: AsyncSession, google_user: dict) -> Optional[str
     if not email:
         return None
 
+    # Определяем компанию по домену email
+    # Если после @ идёт minvest (например @minvest.kg, @minvest.com) — MInvest
+    domain = email.split("@")[-1].lower()
+    if domain.startswith("minvest"):
+        company_id = await get_company_id_by_slug(db, "minvest")
+    else:
+        raise UnauthorizedDomainError(domain=domain)
+
     # Используем email как ad_account для Google-пользователей
     result = await db.execute(select(User).where(User.ad_account == email))
     user: Optional[User] = result.scalars().first()
@@ -286,15 +306,26 @@ async def login_with_google(db: AsyncSession, google_user: dict) -> Optional[str
             last_name=google_user.get("family_name") or "",
             role="Member",
             is_active=True,
+            company_id=company_id,
         )
         db.add(user)
         await db.flush()
     else:
         new_first_name = google_user.get("given_name") or email.split("@")[0]
         new_last_name = google_user.get("family_name") or ""
+        changed = False
+
         if user.first_name != new_first_name or user.last_name != new_last_name:
             user.first_name = new_first_name
             user.last_name = new_last_name
+            changed = True
+
+        # Проставляем компанию если ещё не задана
+        if user.company_id is None and company_id is not None:
+            user.company_id = company_id
+            changed = True
+
+        if changed:
             await db.flush()
 
     session_id = secrets.token_urlsafe(32)
