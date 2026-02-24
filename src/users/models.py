@@ -24,7 +24,7 @@ class User(Base):
     )
 
     # Relationship
-    company: Mapped["Company | None"] = relationship("Company", back_populates="users", lazy="select")
+    company: Mapped["Company | None"] = relationship("Company", back_populates="users", lazy="joined")
 
 
 class Session(Base):
