@@ -28,7 +28,7 @@ class UserAdmin(ModelView, model=User):
     name = "User"
     name_plural = "Users"
     icon = "fa-solid fa-user"
-    column_list = [User.id, User.ad_account, User.first_name, User.last_name, User.role, User.is_active]
+    column_list = [User.id, User.ad_account, User.first_name, User.last_name, User.role, "company_name", User.is_active]
     column_searchable_list = [User.ad_account, User.first_name, User.last_name]
     column_sortable_list = [User.id, User.created_at]
     can_create = True
@@ -36,7 +36,15 @@ class UserAdmin(ModelView, model=User):
     can_delete = True
     can_view_details = True
     page_size = 20
-    
+
+    column_formatters = {
+        "company_name": lambda m, a: m.company.name if m.company else "—"
+    }
+
+    column_labels = {
+        "company_name": "Company"
+    }
+
     form_columns = [User.ad_account, User.first_name, User.last_name, User.role, User.is_active]
     
     form_overrides = {
