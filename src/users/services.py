@@ -1,9 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import secrets
 from typing import Optional
-from urllib.parse import urlencode
 
-import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, func, or_
 
@@ -235,50 +233,6 @@ async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
     return result.scalars().first()
 
 
-def get_google_oauth_url() -> str:
-    """Формирует URL для редиректа пользователя на страницу авторизации Google"""
-    params = {
-        "client_id": settings.GOOGLE_CLIENT_ID,
-        "redirect_uri": settings.GOOGLE_REDIRECT_URI,
-        "response_type": "code",
-        "scope": "openid email profile",
-        "access_type": "offline",
-        "prompt": "select_account",
-    }
-    return f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
-
-
-async def exchange_google_code(code: str) -> Optional[dict]:
-    """Обменивает code от Google на access_token и получает данные пользователя"""
-    async with httpx.AsyncClient() as client:
-        # Обмениваем code на токены
-        token_response = await client.post(
-            "https://oauth2.googleapis.com/token",
-            data={
-                "code": code,
-                "client_id": settings.GOOGLE_CLIENT_ID,
-                "client_secret": settings.GOOGLE_CLIENT_SECRET,
-                "redirect_uri": settings.GOOGLE_REDIRECT_URI,
-                "grant_type": "authorization_code",
-            },
-        )
-        if token_response.status_code != 200:
-            return None
-
-        token_data = token_response.json()
-        access_token = token_data.get("access_token")
-        if not access_token:
-            return None
-
-        # Получаем данные пользователя из Google
-        userinfo_response = await client.get(
-            "https://www.googleapis.com/oauth2/v2/userinfo",
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
-        if userinfo_response.status_code != 200:
-            return None
-
-        return userinfo_response.json()
 
 
 async def login_with_google(db: AsyncSession, google_user: dict) -> Optional[str]:
@@ -288,10 +242,11 @@ async def login_with_google(db: AsyncSession, google_user: dict) -> Optional[str
         return None
 
     # Определяем компанию по домену email
-    # Если после @ идёт minvest (например @minvest.kg, @minvest.com) — MInvest
     domain = email.split("@")[-1].lower()
     if domain.startswith("minvest"):
         company_id = await get_company_id_by_slug(db, "minvest")
+    elif domain == "m-market.kg":
+        company_id = await get_company_id_by_slug(db, "mmarket")
     else:
         raise UnauthorizedDomainError(domain=domain)
 

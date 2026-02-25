@@ -61,10 +61,20 @@ class Settings(BaseSettings):
     SENTRY_ENVIRONMENT: str = Field(default="production", env="SENTRY_ENVIRONMENT")
     SENTRY_TRACES_SAMPLE_RATE: float = Field(default=0.005, env="SENTRY_TRACES_SAMPLE_RATE")
 
-    # Google OAuth
+    # OAuth session secret (для SessionMiddleware / CSRF-защита)
+    OAUTH_SESSION_SECRET: str = Field(..., env="OAUTH_SESSION_SECRET")
+
+    # Google OAuth — M-Market
     GOOGLE_CLIENT_ID: Optional[str] = Field(default=None, env="GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET: Optional[str] = Field(default=None, env="GOOGLE_CLIENT_SECRET")
+
+    # Google OAuth — MInvest (креды ожидаются)
+    MINVEST_GOOGLE_CLIENT_ID: Optional[str] = Field(default=None, env="MINVEST_GOOGLE_CLIENT_ID")
+    MINVEST_GOOGLE_CLIENT_SECRET: Optional[str] = Field(default=None, env="MINVEST_GOOGLE_CLIENT_SECRET")
+
+    # Общий callback URI (один для обоих)
     GOOGLE_REDIRECT_URI: str = Field(default="http://localhost:8000/api/users/auth/google/callback", env="GOOGLE_REDIRECT_URI")
+
     FRONTEND_URL: str = Field(default="http://localhost:3000", env="FRONTEND_URL")
 
     model_config = ConfigDict(env_file=".env", case_sensitive=False)
