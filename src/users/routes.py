@@ -4,6 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 from urllib.parse import urlencode
 from pydantic import BaseModel
+import logging
+
+logger = logging.getLogger(__name__)
 
 from src.db.deps import get_db
 from src.users import services
@@ -138,14 +141,18 @@ async def google_callback(
 ):
     """Единый callback — провайдер определяется по сессии, которая была записана при логине."""
     provider_name = request.session.get("oauth_provider", "google_mmarket")
+    logger.info(f"[OAuth callback] provider_name={provider_name}, session={dict(request.session)}")
     provider = getattr(oauth, provider_name, None)
 
     if provider is None:
+        logger.error(f"[OAuth callback] provider '{provider_name}' not registered")
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error=oauth_not_configured")
 
     try:
         token = await provider.authorize_access_token(request)
-    except Exception:
+        logger.info(f"[OAuth callback] token received successfully")
+    except Exception as e:
+        logger.error(f"[OAuth callback] authorize_access_token failed: {type(e).__name__}: {e}")
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error=google_auth_failed")
 
     # Чистим провайдер из сессии — он больше не нужен
@@ -153,17 +160,23 @@ async def google_callback(
 
     google_user = token.get("userinfo")
     if not google_user:
+        logger.error(f"[OAuth callback] no userinfo in token")
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error=google_auth_failed")
+
+    logger.info(f"[OAuth callback] google_user email={google_user.get('email')}")
 
     try:
         session_id = await services.login_with_google(db, google_user)
     except UnauthorizedDomainError as e:
+        logger.warning(f"[OAuth callback] unauthorized domain: {e}")
         error_msg = urlencode({"error": "unauthorized_domain", "message": str(e)})
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?{error_msg}")
 
     if not session_id:
+        logger.error(f"[OAuth callback] session_id is None after login_with_google")
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error=user_creation_failed")
 
+    logger.info(f"[OAuth callback] success, setting cookie and redirecting to {settings.FRONTEND_URL}/")
     response = RedirectResponse(url=f"{settings.FRONTEND_URL}/", status_code=302)
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
