@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select
 from typing import Optional, List
 import re
 
@@ -9,6 +9,7 @@ from src.companies.schemas import CompanyCreate, CompanyUpdate
 DEFAULT_COMPANIES = [
     "MDigital",
     "MInvest",
+    "MMarket",
 ]
 
 
@@ -19,16 +20,14 @@ def _slugify(name: str) -> str:
 
 async def seed_default_companies(db: AsyncSession) -> None:
     """
-    Если таблица companies пуста — наполняет её компаниями из DEFAULT_COMPANIES.
-    Запускается один раз при старте приложения.
+    Добавляет в таблицу companies отсутствующие компании из DEFAULT_COMPANIES.
+    Запускается при каждом старте приложения, но вставляет только новые записи.
     """
-    count_result = await db.execute(select(func.count()).select_from(Company))
-    count = count_result.scalar()
-    if count and count > 0:
-        return
-
     for name in DEFAULT_COMPANIES:
-        db.add(Company(name=name, slug=_slugify(name)))
+        slug = _slugify(name)
+        existing = await db.execute(select(Company).where(Company.slug == slug))
+        if existing.scalars().first() is None:
+            db.add(Company(name=name, slug=slug))
 
     await db.commit()
 
