@@ -62,7 +62,8 @@ class Settings(BaseSettings):
     SENTRY_TRACES_SAMPLE_RATE: float = Field(default=0.005, env="SENTRY_TRACES_SAMPLE_RATE")
 
     # OAuth session secret (для SessionMiddleware / CSRF-защита)
-    OAUTH_SESSION_SECRET: str = Field(..., env="OAUTH_SESSION_SECRET")
+    # ВАЖНО: в продакшне задайте случайную строку через переменную окружения OAUTH_SESSION_SECRET
+    OAUTH_SESSION_SECRET: str = Field(default=None, env="OAUTH_SESSION_SECRET")
 
     # Google OAuth — M-Market
     GOOGLE_CLIENT_ID: Optional[str] = Field(default=None, env="GOOGLE_CLIENT_ID")
