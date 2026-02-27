@@ -27,7 +27,10 @@ class AdminAuthenticationBackend(AuthenticationBackend):
                 if ad_info is None:
                     return False
                 
-                result = await db.execute(select(User).where(User.ad_account == username))
+                from sqlalchemy.orm import selectinload
+                result = await db.execute(
+                    select(User).options(selectinload(User.company)).where(User.ad_account == username)
+                )
                 user: Optional[User] = result.scalars().first()
                 
                 if not user:
@@ -44,6 +47,7 @@ class AdminAuthenticationBackend(AuthenticationBackend):
                     "user_id": user.id,
                     "ad_account": user.ad_account,
                     "role": user.role,
+                    "company_name": user.company.name if user.company else None,
                     "authenticated": True
                 })
                 

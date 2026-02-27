@@ -27,6 +27,9 @@ class Project(Base):
 
     # Relationships
     company: Mapped["Company | None"] = relationship("Company", back_populates="projects", lazy="select")
+    users: Mapped[list["User"]] = relationship(
+        "User", secondary="project_access", back_populates="projects", lazy="selectin"
+    )
 
 
 class ProjectAccess(Base):

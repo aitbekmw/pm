@@ -1,4 +1,5 @@
 from sqladmin import Admin, ModelView
+from fastapi import Request
 from src.db.session import async_engine
 from src.users.models import User
 from src.projects.models import Project
@@ -24,11 +25,18 @@ PROCESSING_STATUS_CHOICES = [
     ("failed", "Failed"),
 ]
 
+class RestrictedModelView(ModelView):
+    def is_visible(self, request: Request) -> bool:
+        return request.session.get("company_name") == "MDigital"
+
+    def is_accessible(self, request: Request) -> bool:
+        return request.session.get("company_name") == "MDigital"
+
 class UserAdmin(ModelView, model=User):
     name = "User"
     name_plural = "Users"
     icon = "fa-solid fa-user"
-    column_list = [User.id, User.ad_account, User.first_name, User.last_name, User.role, "company_name", User.is_active]
+    column_list = [User.id, User.ad_account, User.first_name, User.last_name, User.role, User.is_active]
     column_searchable_list = [User.ad_account, User.first_name, User.last_name]
     column_sortable_list = [User.id, User.created_at]
     can_create = True
@@ -36,15 +44,7 @@ class UserAdmin(ModelView, model=User):
     can_delete = True
     can_view_details = True
     page_size = 20
-
-    column_formatters = {
-        "company_name": lambda m, a: m.company.name if m.company else "—"
-    }
-
-    column_labels = {
-        "company_name": "Company"
-    }
-
+    
     form_columns = [User.ad_account, User.first_name, User.last_name, User.role, User.is_active]
     
     form_overrides = {
@@ -70,9 +70,18 @@ class ProjectAdmin(ModelView, model=Project):
     can_delete = True
     can_view_details = True
     page_size = 20
+    
+    form_columns = [
+        Project.name,
+        Project.description,
+        Project.is_archived,
+        Project.company,
+        Project.created_by,
+        Project.users
+    ]
 
 
-class MeetingAdmin(ModelView, model=Meeting):
+class MeetingAdmin(RestrictedModelView, model=Meeting):
     name = "Meeting"
     name_plural = "Meetings"
     icon = "fa-solid fa-calendar"
@@ -86,7 +95,7 @@ class MeetingAdmin(ModelView, model=Meeting):
     page_size = 20
 
 
-class MeetingProcessingAdmin(ModelView, model=MeetingProcessing):
+class MeetingProcessingAdmin(RestrictedModelView, model=MeetingProcessing):
     name = "Processing Queue"
     name_plural = "Processing Queue"
     icon = "fa-solid fa-hourglass-half"
@@ -125,7 +134,7 @@ class MeetingProcessingAdmin(ModelView, model=MeetingProcessing):
     }
 
 
-class TranscriptAdmin(ModelView, model=Transcript):
+class TranscriptAdmin(RestrictedModelView, model=Transcript):
     name = "Transcript"
     name_plural = "Transcripts"
     icon = "fa-solid fa-file-lines"

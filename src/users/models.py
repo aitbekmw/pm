@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.companies.models import Company
+    from src.projects.models import Project
 
 from src.db.base import Base
 
@@ -16,6 +17,7 @@ class User(Base):
     first_name: Mapped[str] = mapped_column(String, nullable=False)
     last_name: Mapped[str] = mapped_column(String, nullable=False)
     role: Mapped[str] = mapped_column(String, nullable=False)  # Manager | Member | Admin | Backend Dev | Frontend Dev | Designer | QA
+    admin_password: Mapped[str | None] = mapped_column(String, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id"), nullable=True)  # TODO: make NOT NULL after backfill
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -24,7 +26,10 @@ class User(Base):
     )
 
     # Relationship
-    company: Mapped["Company | None"] = relationship("Company", back_populates="users", lazy="joined")
+    company: Mapped["Company | None"] = relationship("Company", back_populates="users", lazy="select")
+    projects: Mapped[list["Project"]] = relationship(
+        "Project", secondary="project_access", back_populates="users", lazy="selectin"
+    )
 
 
 class Session(Base):
