@@ -163,17 +163,22 @@ async def get_user_by_session(db: AsyncSession, session_id: str) -> Optional[Use
     return result.scalars().first()
 
 
-async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100, search: Optional[str] = None) -> tuple[list[User], int]:
+async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100, search: Optional[str] = None, company_id: Optional[int] = None) -> tuple[list[User], int]:
     """Получает список пользователей с пагинацией и поиском
     
     Параметры:
     - skip: смещение для пагинации
     - limit: количество результатов
     - search: поиск по имени, фамилии или логину (ad_account)
+    - company_id: фильтр по компании (если None — возвращает всех)
     """
     # Получаем базовый запрос
     query = select(User)
-    
+
+    # Фильтруем по компании
+    if company_id is not None:
+        query = query.where(User.company_id == company_id)
+
     # Добавляем фильтр поиска если указан
     if search and search.strip():
         search_term = f"%{search.strip()}%"

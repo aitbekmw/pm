@@ -67,7 +67,7 @@ async def logout(request: Request, response: Response, db: AsyncSession = Depend
 
 @router.get(
     "/login/google",
-    tags=["auth", "oauth"],
+    tags=["oauth"],
     summary="Войти через Google OAuth",
     description=(
         "Перенаправляет браузер пользователя на страницу авторизации Google.\n\n"
@@ -110,7 +110,7 @@ async def google_login(request: Request, company: str = Query(default="mmarket",
 
 @router.get(
     "/auth/google/callback",
-    tags=["auth", "oauth"],
+    tags=["oauth"],
     summary="Google OAuth callback",
     description=(
         "Этот роут вызывается Google'ом автоматически после того как пользователь подтвердил авторизацию.\n\n"
@@ -231,23 +231,31 @@ async def list_users(
     current_user: UserOut = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Получает список пользователей (для всех аутентифицированных пользователей)
-    
+    """Получает список пользователей **своей компании** (для всех аутентифицированных пользователей).
+
+    Фильтрация по компании происходит автоматически — пользователь видит только тех,
+    кто принадлежит той же компании, что и он сам.
+
     Параметры:
     - q или search: поиск по имени (first_name), фамилии (last_name) или логину (ad_account)
     - skip: смещение для пагинации
     - limit: количество результатов на странице
     
     Примеры:
-    - GET /api/users/ - все пользователи
-    - GET /api/users/?q=john - все Джоны
-    - GET /api/users/?search=doe - все с фамилией Doe
-    - GET /api/users/?q=jdoe - поиск по логину jdoe
+    - GET /api/users/ - все пользователи своей компании
+    - GET /api/users/?q=john - все Джоны в своей компании
+    - GET /api/users/?search=doe - все с фамилией Doe в своей компании
     - GET /api/users/?q=john&skip=50&limit=25 - пагинированный поиск
     """
     # Используем q если передан, иначе используем search
     search_query = q or search
-    users, total = await services.get_users(db, skip=skip, limit=limit, search=search_query)
+    users, total = await services.get_users(
+        db,
+        skip=skip,
+        limit=limit,
+        search=search_query,
+        company_id=current_user.company_id,
+    )
     user_out_list = [UserOut.model_validate(user) for user in users]
     return UserList(users=user_out_list, total=total)
 

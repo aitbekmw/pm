@@ -80,15 +80,13 @@ async def create_meeting(
     return meeting
 
 
-@router.get("/", response_model=dict)
-async def get_meetings(
+@router.get("/my", response_model=dict)
+async def get_my_meetings(
     q: Optional[str] = Query(None, min_length=1, description="Поиск по названию встречи"),
-    project_id: Optional[int] = Query(None),
-    organizer_id: Optional[int] = Query(None),
-    start_date: Optional[datetime] = Query(None),
-    end_date: Optional[datetime] = Query(None),
-    min_duration: Optional[float] = Query(None, ge=0, description="Минимальная длительность в минутах (поддерживаются decimals, e.g. 0.5)"),
-    max_duration: Optional[float] = Query(None, ge=0, description="Максимальная длительность в минутах (поддерживаются decimals, e.g. 0.5)"),
+    start_date: Optional[datetime] = Query(None, description="Начало периода (ISO 8601)"),
+    end_date: Optional[datetime] = Query(None, description="Конец периода (ISO 8601)"),
+    min_duration: Optional[float] = Query(None, ge=0, description="Минимальная длительность в минутах"),
+    max_duration: Optional[float] = Query(None, ge=0, description="Максимальная длительность в минутах"),
     sort_date: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по дате"),
     sort_duration: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по длительности"),
     sort_importance: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по важности"),
@@ -98,31 +96,28 @@ async def get_meetings(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Получить список встреч с фильтрацией и сортировкой.
-    
-    Фильтрация по:
-    - q: поиск по названию встречи
-    - project_id: ID проекта
-    - organizer_id: ID организатора встречи
-    - start_date: начало периода (ISO 8601 формат)
-    - end_date: конец периода (ISO 8601 формат)
-    - min_duration / max_duration: диапазон длительности в минутах (поддерживаются decimals)
-    
-    Сортировка (несколько полей одновременно):
-    - sort_date=asc|desc: сортировка по дате
-    - sort_duration=asc|desc: сортировка по длительности
-    - sort_importance=asc|desc: сортировка по важности (low->high или high->low)
-    - Можно использовать оба параметра одновременно: ?sort_importance=desc&sort_date=desc
-    
-    Ответ в формате DRF (Django REST Framework):
+    Получить встречи **только текущего пользователя** (где он является организатором).
+
+    Не включает встречи других участников проектов — только те, что создал сам пользователь.
+
+    Фильтрация:
+    - q: поиск по названию
+    - start_date / end_date: диапазон дат (ISO 8601)
+    - min_duration / max_duration: диапазон длительности в минутах
+
+    Сортировка (можно комбинировать):
+    - sort_date=asc|desc
+    - sort_duration=asc|desc
+    - sort_importance=asc|desc
+
+    Ответ:
     {
-        "count": 100,
-        "next": "http://localhost:8000/api/meetings/?skip=50&limit=50",
-        "previous": "http://localhost:8000/api/meetings/?skip=0&limit=50",
+        "count": 10,
+        "next": "...",
+        "previous": null,
         "results": [...]
     }
     """
-    # Построить sort_by из отдельных параметров
     sort_fields = []
     if sort_importance:
         sort_fields.append(f"importance_{sort_importance}")
@@ -130,73 +125,30 @@ async def get_meetings(
         sort_fields.append(f"date_{sort_date}")
     if sort_duration:
         sort_fields.append(f"duration_{sort_duration}")
-    
     sort_by = ",".join(sort_fields) if sort_fields else "date_desc"
-    
-    if project_id:
-        # Проверить доступ
-        has_access = await project_selectors.check_user_has_project_access(
-            db, current_user.id, current_user.role, project_id
-        )
-        if not has_access:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied to this project"
-            )
-        meetings, total = await selectors.get_project_meetings_with_filters(
-            db, 
-            project_id,
-            search_query=q,
-            organizer_id=organizer_id,
-            start_date=start_date,
-            end_date=end_date,
-            min_duration=min_duration,
-            max_duration=max_duration,
-            sort_by=sort_by,
-            skip=skip,
-            limit=limit,
-            return_count=True
-        )
-    else:
-        meetings, total = await selectors.get_meetings_with_filters(
-            db,
-            current_user.id,
-            current_user.role,
-            search_query=q,
-            project_id=project_id,
-            organizer_id=organizer_id,
-            start_date=start_date,
-            end_date=end_date,
-            min_duration=min_duration,
-            max_duration=max_duration,
-            sort_by=sort_by,
-            skip=skip,
-            limit=limit,
-            return_count=True
-        )
-    
-    # Формируем URLs для next/previous
-    base_url = "http://localhost:8000/api/meetings/"
-    next_url = None
-    previous_url = None
-    
-    if skip + limit < total:
-        next_skip = skip + limit
-        next_url = f"{base_url}?skip={next_skip}&limit={limit}"
-    
-    if skip > 0:
-        previous_skip = max(0, skip - limit)
-        previous_url = f"{base_url}?skip={previous_skip}&limit={limit}"
-    
-    # Преобразуем Meeting объекты в Pydantic models с информацией об организаторе
-    results = [schemas.MeetingListOutWithOrganizer.model_validate(meeting) for meeting in meetings]
- 
-    return {
-        "count": total,
-        "next": next_url,
-        "previous": previous_url,
-        "results": results
-    }
+
+    meetings, total = await selectors.get_meetings_with_filters(
+        db,
+        current_user.id,
+        current_user.role,
+        search_query=q,
+        organizer_id=current_user.id,   # ← только мои встречи
+        start_date=start_date,
+        end_date=end_date,
+        min_duration=min_duration,
+        max_duration=max_duration,
+        sort_by=sort_by,
+        skip=skip,
+        limit=limit,
+        return_count=True
+    )
+
+    base_url = "http://localhost:8000/api/meetings/my"
+    next_url = f"{base_url}?skip={skip + limit}&limit={limit}" if skip + limit < total else None
+    previous_url = f"{base_url}?skip={max(0, skip - limit)}&limit={limit}" if skip > 0 else None
+
+    results = [schemas.MeetingListOutWithOrganizer.model_validate(m) for m in meetings]
+    return {"count": total, "next": next_url, "previous": previous_url, "results": results}
 
 
 @router.get("/uncategorized", response_model=List[schemas.MeetingListOutWithOrganizer])
