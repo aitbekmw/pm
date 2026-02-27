@@ -32,7 +32,7 @@ deploy:deploy_prod:
     - docker compose up -d
     - docker compose ps
   tags:
-    - deploy
+    - md-scribe-prod-runner
   only:
     - main
   when: manual
