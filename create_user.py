@@ -3,6 +3,9 @@ import argparse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from src.db.base import import_all_models
+import_all_models()  # Ensure all models are registered before any queries
+
 from src.core.security import get_password_hash
 from src.db.session import AsyncSessionLocal
 from src.users.models import User

@@ -42,5 +42,5 @@ class ProjectAccess(Base):
     granted_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     
     # Relationship для загрузки пользователя
-    user: Mapped["User | None"] = relationship("User", foreign_keys=[user_id], lazy="select")
+    user: Mapped["User | None"] = relationship("User", foreign_keys=[user_id], lazy="select", overlaps="projects,users")
 
