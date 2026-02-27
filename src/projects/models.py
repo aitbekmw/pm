@@ -6,6 +6,7 @@ from src.db.base import Base
 
 if TYPE_CHECKING:
     from src.users.models import User
+    from src.companies.models import Company
 
 
 class Project(Base):
@@ -18,9 +19,16 @@ class Project(Base):
     jira_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id"), nullable=True)  # TODO: make NOT NULL after backfill
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    company: Mapped["Company | None"] = relationship("Company", back_populates="projects", lazy="select")
+    users: Mapped[list["User"]] = relationship(
+        "User", secondary="project_access", back_populates="projects", lazy="selectin"
     )
 
 
@@ -34,5 +42,5 @@ class ProjectAccess(Base):
     granted_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     
     # Relationship для загрузки пользователя
-    user: Mapped["User | None"] = relationship("User", foreign_keys=[user_id], lazy="select")
+    user: Mapped["User | None"] = relationship("User", foreign_keys=[user_id], lazy="select", overlaps="projects,users")
 

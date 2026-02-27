@@ -13,5 +13,6 @@ def import_all_models() -> None:
     from src.users import models as _users_models  # noqa: F401
     from src.projects import models as _projects_models  # noqa: F401
     from src.meetings import models as _meetings_models  # noqa: F401
+    from src.companies import models as _companies_models  # noqa: F401
 
 

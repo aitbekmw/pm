@@ -36,3 +36,31 @@ deploy:deploy_prod:
   only:
     - main
   when: manual
+
+# Test build
+build:build_test:
+  stage: build
+  script:
+    - export DOCKER_BUILDKIT=1
+    - docker build -t "$BACK_IMAGE" -f Dockerfile .
+    - docker push "$BACK_IMAGE"
+  tags:
+    - md-scribe-runner
+  only:
+    - test
+  when: manual
+
+# Test deploy
+deploy:deploy_test:
+  stage: deploy
+  script:
+    - export IMAGE_TAG="$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
+    - docker compose down || true
+    - docker compose pull
+    - docker compose up -d
+    - docker compose ps
+  tags:
+    - md-scribe-runner
+  only:
+    - test
+  when: manual

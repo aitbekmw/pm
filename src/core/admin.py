@@ -1,4 +1,5 @@
 from sqladmin import Admin, ModelView
+from fastapi import Request
 from src.db.session import async_engine
 from src.users.models import User
 from src.projects.models import Project
@@ -23,6 +24,13 @@ PROCESSING_STATUS_CHOICES = [
     ("completed", "Completed"),
     ("failed", "Failed"),
 ]
+
+class RestrictedModelView(ModelView):
+    def is_visible(self, request: Request) -> bool:
+        return request.session.get("company_name") == "MDigital"
+
+    def is_accessible(self, request: Request) -> bool:
+        return request.session.get("company_name") == "MDigital"
 
 class UserAdmin(ModelView, model=User):
     name = "User"
@@ -62,9 +70,18 @@ class ProjectAdmin(ModelView, model=Project):
     can_delete = True
     can_view_details = True
     page_size = 20
+    
+    form_columns = [
+        Project.name,
+        Project.description,
+        Project.is_archived,
+        Project.company,
+        Project.created_by,
+        Project.users
+    ]
 
 
-class MeetingAdmin(ModelView, model=Meeting):
+class MeetingAdmin(RestrictedModelView, model=Meeting):
     name = "Meeting"
     name_plural = "Meetings"
     icon = "fa-solid fa-calendar"
@@ -78,7 +95,7 @@ class MeetingAdmin(ModelView, model=Meeting):
     page_size = 20
 
 
-class MeetingProcessingAdmin(ModelView, model=MeetingProcessing):
+class MeetingProcessingAdmin(RestrictedModelView, model=MeetingProcessing):
     name = "Processing Queue"
     name_plural = "Processing Queue"
     icon = "fa-solid fa-hourglass-half"
@@ -117,7 +134,7 @@ class MeetingProcessingAdmin(ModelView, model=MeetingProcessing):
     }
 
 
-class TranscriptAdmin(ModelView, model=Transcript):
+class TranscriptAdmin(RestrictedModelView, model=Transcript):
     name = "Transcript"
     name_plural = "Transcripts"
     icon = "fa-solid fa-file-lines"

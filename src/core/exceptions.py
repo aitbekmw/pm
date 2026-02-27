@@ -56,3 +56,13 @@ class InternalServerError(BaseAPIException):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=detail
         )
+
+class UnauthorizedDomainError(Exception):
+    """Email-домен не принадлежит ни одной из зарегистрированных компаний."""
+
+    def __init__(self, domain: str):
+        self.domain = domain
+        super().__init__(
+            f"Вход разрешён только с корпоративной почты. "
+            f"Домен «{domain}» не привязан ни к одной компании."
+        )

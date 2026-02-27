@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, func
+from sqlalchemy import select, and_, or_, func, case
 from sqlalchemy.orm import joinedload
 from typing import Optional
 from datetime import datetime
@@ -385,6 +385,24 @@ async def get_meetings_with_filters(
             query = query.order_by(Meeting.duration.asc())
         elif sort_field == "duration_desc":
             query = query.order_by(Meeting.duration.desc())
+        elif sort_field == "importance_asc":
+            query = query.order_by(
+                case(
+                    (Meeting.importance == 'low', 1),
+                    (Meeting.importance == 'middle', 2),
+                    (Meeting.importance == 'high', 3),
+                    else_=0
+                ).asc()
+            )
+        elif sort_field == "importance_desc":
+            query = query.order_by(
+                case(
+                    (Meeting.importance == 'low', 1),
+                    (Meeting.importance == 'middle', 2),
+                    (Meeting.importance == 'high', 3),
+                    else_=0
+                ).desc()
+            )
     
     # Получаем общее количество до apply offset/limit
     if return_count:
@@ -479,6 +497,24 @@ async def get_project_meetings_with_filters(
             query = query.order_by(Meeting.duration.asc())
         elif sort_field == "duration_desc":
             query = query.order_by(Meeting.duration.desc())
+        elif sort_field == "importance_asc":
+            query = query.order_by(
+                case(
+                    (Meeting.importance == 'low', 1),
+                    (Meeting.importance == 'middle', 2),
+                    (Meeting.importance == 'high', 3),
+                    else_=0
+                ).asc()
+            )
+        elif sort_field == "importance_desc":
+            query = query.order_by(
+                case(
+                    (Meeting.importance == 'low', 1),
+                    (Meeting.importance == 'middle', 2),
+                    (Meeting.importance == 'high', 3),
+                    else_=0
+                ).desc()
+            )
     
     # Получаем общее количество до apply offset/limit
     if return_count:

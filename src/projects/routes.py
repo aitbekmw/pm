@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
+from datetime import datetime
 
 from src.db.deps import get_db
 from src.users.models import User
 from src.core.permissions import get_current_user, require_manager_or_admin
 from src.projects import schemas, services, selectors
+from src.meetings import schemas as meeting_schemas, selectors as meeting_selectors
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -86,6 +88,90 @@ async def get_archived_projects(
         result.append(project_data)
     
     return result
+
+
+@router.get("/{project_id}/meetings", response_model=dict)
+async def get_project_meetings(
+    project_id: int,
+    q: Optional[str] = Query(None, min_length=1, description="Поиск по названию встречи"),
+    organizer_id: Optional[int] = Query(None, description="Фильтр по организатору встречи"),
+    start_date: Optional[datetime] = Query(None, description="Начало периода (ISO 8601)"),
+    end_date: Optional[datetime] = Query(None, description="Конец периода (ISO 8601)"),
+    min_duration: Optional[float] = Query(None, ge=0, description="Минимальная длительность в минутах"),
+    max_duration: Optional[float] = Query(None, ge=0, description="Максимальная длительность в минутах"),
+    sort_date: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по дате"),
+    sort_duration: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по длительности"),
+    sort_importance: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по важности"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Получить встречи **внутри проекта**.
+
+    Возвращает все встречи, привязанные к данному проекту.
+    Доступно всем участникам проекта (Admin видит встречи всех проектов).
+
+    Фильтрация:
+    - q: поиск по названию встречи
+    - organizer_id: фильтр по конкретному организатору
+    - start_date / end_date: диапазон дат (ISO 8601)
+    - min_duration / max_duration: диапазон длительности в минутах
+
+    Сортировка (можно комбинировать):
+    - sort_date=asc|desc
+    - sort_duration=asc|desc
+    - sort_importance=asc|desc
+
+    Ответ:
+    {
+        "count": 10,
+        "next": "...",
+        "previous": null,
+        "results": [...]
+    }
+    """
+    # Проверить доступ к проекту
+    has_access = await selectors.check_user_has_project_access(
+        db, current_user.id, current_user.role, project_id
+    )
+    if not has_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied to this project"
+        )
+
+    sort_fields = []
+    if sort_importance:
+        sort_fields.append(f"importance_{sort_importance}")
+    if sort_date:
+        sort_fields.append(f"date_{sort_date}")
+    if sort_duration:
+        sort_fields.append(f"duration_{sort_duration}")
+    sort_by = ",".join(sort_fields) if sort_fields else "date_desc"
+
+    meetings, total = await meeting_selectors.get_project_meetings_with_filters(
+        db,
+        project_id=project_id,
+        search_query=q,
+        organizer_id=organizer_id,
+        start_date=start_date,
+        end_date=end_date,
+        min_duration=min_duration,
+        max_duration=max_duration,
+        sort_by=sort_by,
+        skip=skip,
+        limit=limit,
+        return_count=True
+    )
+
+    base_url = f"http://localhost:8000/api/projects/{project_id}/meetings"
+    next_url = f"{base_url}?skip={skip + limit}&limit={limit}" if skip + limit < total else None
+    previous_url = f"{base_url}?skip={max(0, skip - limit)}&limit={limit}" if skip > 0 else None
+
+    results = [meeting_schemas.MeetingListOutWithOrganizer.model_validate(m) for m in meetings]
+    return {"count": total, "next": next_url, "previous": previous_url, "results": results}
 
 
 @router.get("/{project_id}", response_model=schemas.ProjectOut)

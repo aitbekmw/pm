@@ -9,6 +9,8 @@ from ldap3 import Server, Connection, ALL, NTLM
 
 from src.core.config import settings
 from src.users.models import User, Session
+from src.companies.services import get_company_id_by_slug
+from src.core.exceptions import UnauthorizedDomainError
 
 
 def _ldap_authenticate(username: str, password: str) -> Optional[dict]:
@@ -102,29 +104,39 @@ async def login_with_ad(db: AsyncSession, username: str, password: str) -> Optio
     if ad_info is None:
         return None
 
+    # AD-пользователи всегда принадлежат MDigital
+    mdigital_id = await get_company_id_by_slug(db, "mdigital")
+
     # Find or create user by ad_account
     result = await db.execute(select(User).where(User.ad_account == username))
     user: Optional[User] = result.scalars().first()
     if user is None:
-        # Создаем нового пользователя с ролью Member по умолчанию
         user = User(
             ad_account=username,
             first_name=ad_info.get("first_name") or username,
             last_name=ad_info.get("last_name") or "",
-            role="Member",  # Всегда Member по умолчанию
+            role="Member",
             is_active=True,
+            company_id=mdigital_id,
         )
         db.add(user)
         await db.flush()
     else:
-        # Обновляем только имя и фамилию, если они изменились в AD
-        # Роль остается той, что была назначена в системе
         new_first_name = ad_info.get("first_name") or username
         new_last_name = ad_info.get("last_name") or ""
-        
+        changed = False
+
         if user.first_name != new_first_name or user.last_name != new_last_name:
             user.first_name = new_first_name
             user.last_name = new_last_name
+            changed = True
+
+        # Проставляем компанию если ещё не задана
+        if user.company_id is None and mdigital_id is not None:
+            user.company_id = mdigital_id
+            changed = True
+
+        if changed:
             await db.flush()
 
     # Create session
@@ -151,17 +163,22 @@ async def get_user_by_session(db: AsyncSession, session_id: str) -> Optional[Use
     return result.scalars().first()
 
 
-async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100, search: Optional[str] = None) -> tuple[list[User], int]:
+async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100, search: Optional[str] = None, company_id: Optional[int] = None) -> tuple[list[User], int]:
     """Получает список пользователей с пагинацией и поиском
     
     Параметры:
     - skip: смещение для пагинации
     - limit: количество результатов
     - search: поиск по имени, фамилии или логину (ad_account)
+    - company_id: фильтр по компании (если None — возвращает всех)
     """
     # Получаем базовый запрос
     query = select(User)
-    
+
+    # Фильтруем по компании
+    if company_id is not None:
+        query = query.where(User.company_id == company_id)
+
     # Добавляем фильтр поиска если указан
     if search and search.strip():
         search_term = f"%{search.strip()}%"
@@ -219,3 +236,61 @@ async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
     """Получает пользователя по ID"""
     result = await db.execute(select(User).where(User.id == user_id))
     return result.scalars().first()
+
+
+
+
+async def login_with_google(db: AsyncSession, google_user: dict) -> Optional[str]:
+    """Находит или создаёт пользователя по данным Google и создаёт сессию"""
+    email = google_user.get("email")
+    if not email:
+        return None
+
+    # Определяем компанию по домену email
+    domain = email.split("@")[-1].lower()
+    if domain.startswith("minvest"):
+        company_id = await get_company_id_by_slug(db, "minvest")
+    elif domain == "m-market.kg":
+        company_id = await get_company_id_by_slug(db, "mmarket")
+    else:
+        raise UnauthorizedDomainError(domain=domain)
+
+    # Используем email как ad_account для Google-пользователей
+    result = await db.execute(select(User).where(User.ad_account == email))
+    user: Optional[User] = result.scalars().first()
+
+    if user is None:
+        user = User(
+            ad_account=email,
+            first_name=google_user.get("given_name") or email.split("@")[0],
+            last_name=google_user.get("family_name") or "",
+            role="Member",
+            is_active=True,
+            company_id=company_id,
+        )
+        db.add(user)
+        await db.flush()
+    else:
+        new_first_name = google_user.get("given_name") or email.split("@")[0]
+        new_last_name = google_user.get("family_name") or ""
+        changed = False
+
+        if user.first_name != new_first_name or user.last_name != new_last_name:
+            user.first_name = new_first_name
+            user.last_name = new_last_name
+            changed = True
+
+        # Проставляем компанию если ещё не задана
+        if user.company_id is None and company_id is not None:
+            user.company_id = company_id
+            changed = True
+
+        if changed:
+            await db.flush()
+
+    session_id = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=settings.SESSION_TTL_DAYS)
+    db.add(Session(session_id=session_id, user_id=user.id, expires_at=expires_at))
+    await db.commit()
+    return session_id
+

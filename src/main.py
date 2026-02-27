@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.sessions import SessionMiddleware
+from contextlib import asynccontextmanager
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
@@ -12,7 +14,9 @@ from src.users.routes import router as users_router
 from src.projects.routes import router as projects_router
 from src.meetings.routes import router as meetings_router
 from src.notifications.routes import router as notifications_router
-
+from src.companies.routes import router as companies_router
+from src.companies.services import seed_default_companies
+from src.db.session import AsyncSessionLocal
 
 # Initialize Sentry before logging setup
 if settings.SENTRY_DSN:
@@ -29,15 +33,40 @@ if settings.SENTRY_DSN:
 
 setup_logging()
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Наполняем таблицу компаний дефолтными значениями если она пуста
+    async with AsyncSessionLocal() as db:
+        await seed_default_companies(db)
+    yield
+
+
 app = FastAPI(
     title=settings.app_name,
     debug=settings.debug,
+    lifespan=lifespan,
+)
+
+# SessionMiddleware CSRF-защита OAuth)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.OAUTH_SESSION_SECRET,
+    session_cookie="oauth_session",
+    same_site="lax",
+    https_only=True,
 )
 
 # CORS middleware
+_CORS_ORIGINS = (
+    ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:5173"]
+    if settings.debug
+    else ([settings.FRONTEND_URL] if settings.FRONTEND_URL else [])
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:5173", "https://meet.google.com"] if settings.debug else [],
+    allow_origins=_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -50,6 +79,7 @@ app.include_router(users_router, prefix=settings.api_prefix)
 app.include_router(projects_router, prefix=settings.api_prefix)
 app.include_router(meetings_router, prefix=settings.api_prefix)
 app.include_router(notifications_router, prefix=settings.api_prefix)
+app.include_router(companies_router, prefix=settings.api_prefix)
 
 @app.get("/")
 async def root():
