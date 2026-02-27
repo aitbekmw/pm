@@ -17,8 +17,6 @@ build:build_images:
     - export DOCKER_BUILDKIT=1
     - docker build -t "$BACK_IMAGE" -f Dockerfile .
     - docker push "$BACK_IMAGE"
-  tags:
-    - global-runner
   only:
     - main
   when: manual
@@ -44,8 +42,6 @@ build:build_test:
     - export DOCKER_BUILDKIT=1
     - docker build -t "$BACK_IMAGE" -f Dockerfile .
     - docker push "$BACK_IMAGE"
-  tags:
-    - md-scribe-runner
   only:
     - test
   when: manual
