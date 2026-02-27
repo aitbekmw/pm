@@ -23,17 +23,39 @@ class AdminAuthenticationBackend(AuthenticationBackend):
         
         async for db in get_db():
             try:
-                ad_info = _ldap_authenticate(username, password)
-                if ad_info is None:
-                    return False
-                
                 from sqlalchemy.orm import selectinload
+                
+                # Сначала ищем пользователя в базе
                 result = await db.execute(
                     select(User).options(selectinload(User.company)).where(User.ad_account == username)
                 )
                 user: Optional[User] = result.scalars().first()
                 
-                if not user:
+                authenticated = False
+                
+                if user and user.admin_password:
+                    # Проверяем локальный пароль
+                    from src.core.security import verify_password
+                    if verify_password(password, user.admin_password):
+                        authenticated = True
+                
+                if not authenticated:
+                    # Если локального пароля нет или он не подошел, пробуем через AD
+                    ad_info = _ldap_authenticate(username, password)
+                    if ad_info is not None:
+                        authenticated = True
+                        
+                        # Если пользователь авторизовался через AD, но его еще нет в базе, 
+                        # логика создания должна быть в другом месте, 
+                        # но для админки нам нужен существующий пользователь
+                        if not user:
+                            # Пытаемся найти снова на случай если он был только что создан
+                            result = await db.execute(
+                                select(User).options(selectinload(User.company)).where(User.ad_account == username)
+                            )
+                            user = result.scalars().first()
+
+                if not authenticated or not user:
                     return False
                 
                 if not user.is_active:
