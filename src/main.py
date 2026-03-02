@@ -54,7 +54,7 @@ app.add_middleware(
     secret_key=settings.OAUTH_SESSION_SECRET,
     session_cookie="oauth_session",
     same_site="lax",
-    https_only=True,
+    https_only=not settings.debug,  # на тестовом окружении (debug=True) разрешаем HTTP
 )
 
 # CORS middleware
