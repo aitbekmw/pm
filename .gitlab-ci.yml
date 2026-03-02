@@ -41,6 +41,7 @@ deploy:deploy_prod:
 build:build_test:
   stage: build
   script:
+    - cp $env_file_test .env
     - export DOCKER_BUILDKIT=1
     - docker build -t "$BACK_IMAGE" -f Dockerfile .
     - docker push "$BACK_IMAGE"
@@ -54,6 +55,7 @@ build:build_test:
 deploy:deploy_test:
   stage: deploy
   script:
+    - cp $env_file_test .env
     - export IMAGE_TAG="$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
     - docker compose down || true
     - docker compose pull
