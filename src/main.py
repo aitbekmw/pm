@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from contextlib import asynccontextmanager
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -48,13 +49,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# SessionMiddleware CSRF-защита OAuth)
+
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.OAUTH_SESSION_SECRET,
     session_cookie="oauth_session",
     same_site="lax",
-    https_only=not settings.debug,  # на тестовом окружении (debug=True) разрешаем HTTP
+    https_only=True,
 )
 
 # CORS middleware
