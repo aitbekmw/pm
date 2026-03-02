@@ -40,8 +40,10 @@ deploy:deploy_prod:
 # Test build
 build:build_test:
   stage: build
-  script:
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "${CI_REGISTRY_PASSWORD:-$CI_JOB_TOKEN}" "$CI_REGISTRY"
     - cp $env_file_test .env
+  script:
     - export DOCKER_BUILDKIT=1
     - docker build -t "$BACK_IMAGE" -f Dockerfile .
     - docker push "$BACK_IMAGE"
@@ -54,8 +56,10 @@ build:build_test:
 # Test deploy
 deploy:deploy_test:
   stage: deploy
-  script:
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "${CI_REGISTRY_PASSWORD:-$CI_JOB_TOKEN}" "$CI_REGISTRY"
     - cp $env_file_test .env
+  script:
     - export IMAGE_TAG="$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
     - docker compose down || true
     - docker compose pull
