@@ -9,7 +9,7 @@ from src.users.models import User
 from src.core.permissions import get_current_user
 from src.meetings import schemas, services, selectors
 from src.projects import selectors as project_selectors
-from src.core.queue import enqueue_meeting_processing
+from src.core.queue import enqueue_meeting_processing, enqueue_meeting_processing_from_subtitle
 
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 @router.post("/", response_model=schemas.MeetingOut, status_code=status.HTTP_201_CREATED)
 async def create_meeting(
     title: str = Form(...),
+    subtitle: Optional[str] = Form(None, description="Транскрипт из Google Meet (для саммаризации)"),
     project_id: Optional[int] = Form(None),
     meeting_date: Optional[datetime] = Form(None),
     comments: Optional[str] = Form(None),
@@ -49,6 +50,7 @@ async def create_meeting(
     
     data = schemas.MeetingCreate(
         title=title,
+        subtitle=subtitle,
         project_id=project_id,
         meeting_date=meeting_date,
         comments=comments,
@@ -74,9 +76,12 @@ async def create_meeting(
     # Автоматически запустить обработку если загружено аудио
     if audio_file:
         job_id = await enqueue_meeting_processing(meeting.id)
-        # Логирование (можно удалить если не нужно)
         logger.info(f"Meeting {meeting.id} processing started automatically after file upload, job_id={job_id}")
-    
+    # Если аудио нет, но есть subtitle — запускаем саммаризацию из готового транскрипта
+    elif data.subtitle:
+        job_id = await enqueue_meeting_processing_from_subtitle(meeting.id)
+        logger.info(f"Meeting {meeting.id} subtitle processing started, job_id={job_id}")
+
     return meeting
 
 

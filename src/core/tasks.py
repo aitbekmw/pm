@@ -252,6 +252,161 @@ async def process_meeting(ctx, meeting_id: int):
             }
 
 
+async def process_meeting_from_subtitle(ctx, meeting_id: int):
+    """Фоновая задача для обработки встречи из готового транскрипта (subtitle).
+    Пропускает транскрибацию — сразу суммаризация + action items + PDF.
+    """
+    async with AsyncSessionLocal() as db:
+        meeting = await selectors.get_meeting_by_id(db, meeting_id)
+        if not meeting or not meeting.subtitle:
+            logger.error(f"Meeting {meeting_id} not found or subtitle is empty")
+            return {"error": "Meeting or subtitle not found"}
+
+        # Создать или обновить статус обработки
+        processing_result = await db.execute(
+            select(MeetingProcessing).where(MeetingProcessing.meeting_id == meeting_id)
+        )
+        processing = processing_result.scalars().first()
+
+        if not processing:
+            processing = MeetingProcessing(
+                meeting_id=meeting_id,
+                status="processing",
+                current_stage="summarization",
+                progress=10,
+                started_at=datetime.now(timezone.utc)
+            )
+            db.add(processing)
+            await db.commit()
+        else:
+            processing.status = "processing"
+            processing.current_stage = "summarization"
+            processing.progress = 10
+            processing.started_at = datetime.now(timezone.utc)
+            processing.error_message = None
+            await db.commit()
+
+        try:
+            transcript_text = meeting.subtitle
+
+            # Сохраняем транскрипт из subtitle
+            transcript_obj = Transcript(
+                meeting_id=meeting_id,
+                content=transcript_text,
+                timestamps=None
+            )
+            db.add(transcript_obj)
+            await db.commit()
+
+            processing.progress = 30
+            await db.commit()
+
+            # Суммаризация
+            processing.current_stage = "summarization"
+            processing.progress = 40
+            await db.commit()
+
+            logger.info(f"Starting summarization from subtitle for meeting {meeting_id}...")
+            summary_text = await ai_service.summarize_transcript(transcript_text, meeting.title)
+
+            if not summary_text:
+                raise Exception("Summarization failed")
+
+            summary_obj = Summary(
+                meeting_id=meeting_id,
+                content=summary_text
+            )
+            db.add(summary_obj)
+            await db.commit()
+
+            processing.progress = 70
+            await db.commit()
+
+            # Action items
+            processing.current_stage = "action_items"
+            processing.progress = 80
+            await db.commit()
+
+            action_items = await ai_service.extract_action_items(transcript_text)
+            if action_items:
+                from src.meetings.models import ActionItem
+                if isinstance(action_items, list):
+                    for item in action_items:
+                        if isinstance(item, dict):
+                            action_item = ActionItem(
+                                meeting_id=meeting_id,
+                                title=item.get('title', 'Untitled'),
+                                description=item.get('description'),
+                                status='pending'
+                            )
+                            db.add(action_item)
+                    await db.commit()
+
+            # PDF
+            processing.current_stage = "pdf_generation"
+            processing.progress = 90
+            await db.commit()
+
+            logger.info(f"Starting PDF generation for meeting {meeting_id}...")
+
+            notes_list = await selectors.get_meeting_notes(db, meeting_id)
+            notes_data = [{'content': n.content or '', 'created_at': n.created_at} for n in notes_list]
+
+            organizer_name = None
+            if meeting.organizer:
+                organizer_name = f"{meeting.organizer.first_name} {meeting.organizer.last_name}".strip()
+
+            pdf_buffer = generate_meeting_pdf(
+                title=meeting.title,
+                meeting_date=meeting.meeting_date,
+                duration=meeting.duration,
+                transcript=transcript_text,
+                summary=summary_text,
+                notes=notes_data,
+                organizer_name=organizer_name
+            )
+
+            pdf_path = f"meetings/{uuid.uuid4()}.pdf"
+            pdf_buffer.seek(0)
+            pdf_file_obj = io.BytesIO(pdf_buffer.read())
+            pdf_s3_path = storage.upload_file(pdf_file_obj, pdf_path, content_type="application/pdf")
+
+            if pdf_s3_path:
+                meeting.pdf_file_path = pdf_s3_path
+                await db.commit()
+                logger.info(f"PDF uploaded to S3: {pdf_s3_path}")
+            else:
+                logger.error(f"Failed to upload PDF to S3 for meeting {meeting_id}")
+
+            processing.status = "completed"
+            processing.current_stage = "completed"
+            processing.progress = 100
+            processing.completed_at = datetime.now(timezone.utc)
+            await db.commit()
+
+            logger.info(f"Meeting {meeting_id} subtitle processing completed successfully")
+            return {
+                "success": True,
+                "meeting_id": meeting_id,
+                "transcript_length": len(transcript_text),
+                "action_items_count": len(action_items) if action_items else 0
+            }
+
+        except Exception as e:
+            logger.error(f"Error processing meeting {meeting_id} from subtitle: {e}", exc_info=True)
+            try:
+                await db.rollback()
+                processing.status = "failed"
+                processing.error_message = str(e)
+                processing.completed_at = datetime.now(timezone.utc)
+                await db.commit()
+            except Exception as commit_error:
+                logger.error(f"Error updating processing status: {commit_error}", exc_info=True)
+                await db.rollback()
+
+            return {"error": str(e), "meeting_id": meeting_id}
+
+
 async def startup(ctx):
     """Инициализация при запуске воркера"""
     pass
@@ -264,7 +419,7 @@ async def shutdown(ctx):
 
 # Конфигурация ARQ воркера
 class WorkerSettings:
-    functions = [process_meeting]
+    functions = [process_meeting, process_meeting_from_subtitle]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)

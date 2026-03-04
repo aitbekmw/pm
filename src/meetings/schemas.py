@@ -30,6 +30,7 @@ class MeetingBase(BaseModel):
 
 class MeetingCreate(BaseModel):
     title: str
+    subtitle: Optional[str] = None
     project_id: Optional[int] = None
     meeting_date: Optional[datetime] = None
     comments: Optional[str] = None
@@ -51,6 +52,7 @@ class MeetingUpdate(BaseModel):
 class MeetingOut(BaseModel):
     id: int
     title: str
+    subtitle: Optional[str] = None
     project_id: Optional[int]
     organizer_name: Optional[str] = None
     meeting_date: datetime

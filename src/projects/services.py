@@ -43,6 +43,7 @@ async def create_project(
     db.add(creator_access)
     
     # Добавить пользователей из запроса
+    users_to_notify = []
     if data.users:
         for user_data in data.users:
             # Пропускаем создателя, так как он уже добавлен
@@ -56,10 +57,24 @@ async def create_project(
                 granted_at=datetime.now(timezone.utc)
             )
             db.add(access)
-    
+            users_to_notify.append(user_data.id)
+
     await db.commit()
     await db.refresh(project)
-    
+
+    # Отправляем уведомления участникам, добавленным при создании проекта
+    if users_to_notify:
+        from src.notifications import services as notification_services
+        for uid in users_to_notify:
+            await notification_services.create_notification(
+                db=db,
+                user_id=uid,
+                type="added_to_project",
+                title="Вас добавили в проект",
+                message=f"Вас добавили в проект {project.name}",
+                project_id=project.id
+            )
+
     return project
 
 
