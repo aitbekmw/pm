@@ -501,6 +501,7 @@ async def get_meeting(
         meeting=meeting_out,
         transcript=schemas.TranscriptOut.model_validate(transcript) if transcript else None,
         summary=schemas.SummaryOut.model_validate(summary) if summary else None,
+        subtitle=meeting.subtitle,
         notes=meeting.notes,
         action_items=[schemas.ActionItemOut.model_validate(item) for item in action_items],
         pdf=meeting_out.pdf_file_path  # URL уже сериализован через field_serializer
