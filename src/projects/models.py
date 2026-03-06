@@ -25,6 +25,9 @@ class Project(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
+    def __str__(self) -> str:
+        return self.name
+
     # Relationships
     company: Mapped["Company | None"] = relationship("Company", back_populates="projects", lazy="select")
     users: Mapped[list["User"]] = relationship(

@@ -30,6 +30,7 @@ class MeetingBase(BaseModel):
 
 class MeetingCreate(BaseModel):
     title: str
+    subtitle: Optional[str] = None
     project_id: Optional[int] = None
     meeting_date: Optional[datetime] = None
     comments: Optional[str] = None
@@ -272,6 +273,7 @@ class MeetingDetailsOut(BaseModel):
     meeting: MeetingOut
     transcript: Optional[TranscriptOut] = None
     summary: Optional[SummaryOut] = None
+    subtitle: Optional[str] = None  # Транскрипт из Google Meet (Google Extension)
     notes: Optional[str] = None
     action_items: list[ActionItemOut] = []
     pdf: Optional[str] = None  # URL для скачивания PDF

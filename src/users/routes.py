@@ -88,24 +88,50 @@ async def google_login(request: Request, company: str = Query(default="mmarket",
     - company=mmarket (дефолт) — использует креды M-Market
     - company=minvest — использует креды MInvest (нужны MINVEST_GOOGLE_CLIENT_ID/SECRET в .env)
     """
+    logger.info(
+        f"[google_login] company={company} | "
+        f"MINVEST_CLIENT_ID set={bool(settings.MINVEST_GOOGLE_CLIENT_ID)} | "
+        f"MINVEST_CLIENT_SECRET set={bool(settings.MINVEST_GOOGLE_CLIENT_SECRET)} | "
+        f"GOOGLE_REDIRECT_URI={settings.GOOGLE_REDIRECT_URI} | "
+        f"FRONTEND_URL={settings.FRONTEND_URL} | "
+        f"OAUTH_SESSION_SECRET set={bool(settings.OAUTH_SESSION_SECRET)} | "
+        f"debug={settings.debug}"
+    )
+    logger.info(f"[google_login] request.url={request.url} | base_url={request.base_url}")
+
     if company == "minvest":
         if not settings.MINVEST_GOOGLE_CLIENT_ID or not settings.MINVEST_GOOGLE_CLIENT_SECRET:
+            logger.error("[google_login] MInvest OAuth creds not set in .env!")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="MInvest Google OAuth is not configured yet"
             )
-        # Запоминаем какой провайдер использовали — нужно в коллбеке
-        request.session["oauth_provider"] = "google_minvest"
-        return await oauth.google_minvest.authorize_redirect(request, settings.GOOGLE_REDIRECT_URI)
+        logger.info("[google_login] starting authorize_redirect for google_minvest")
+        try:
+            request.session["oauth_provider"] = "google_minvest"
+            redirect = await oauth.google_minvest.authorize_redirect(request, settings.GOOGLE_REDIRECT_URI)
+            logger.info(f"[google_login] authorize_redirect success, redirect headers={dict(redirect.headers)}")
+            return redirect
+        except Exception as e:
+            logger.error(f"[google_login] authorize_redirect FAILED: {type(e).__name__}: {e}", exc_info=True)
+            raise
 
     # дефолт — mmarket
     if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
+        logger.error("[google_login] mmarket OAuth creds not set in .env!")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Google OAuth is not configured"
         )
-    request.session["oauth_provider"] = "google_mmarket"
-    return await oauth.google_mmarket.authorize_redirect(request, settings.GOOGLE_REDIRECT_URI)
+    logger.info("[google_login] starting authorize_redirect for google_mmarket")
+    try:
+        request.session["oauth_provider"] = "google_mmarket"
+        redirect = await oauth.google_mmarket.authorize_redirect(request, settings.GOOGLE_REDIRECT_URI)
+        logger.info(f"[google_login] authorize_redirect success, redirect headers={dict(redirect.headers)}")
+        return redirect
+    except Exception as e:
+        logger.error(f"[google_login] authorize_redirect FAILED: {type(e).__name__}: {e}", exc_info=True)
+        raise
 
 
 @router.get(

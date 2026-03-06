@@ -12,6 +12,8 @@ from src.meetings.schemas import MeetingCreate, MeetingUpdate
 from src.meetings import selectors
 from src.core.storage import storage
 from src.core.ai_services import ai_service
+from src.users.models import User
+from src.projects.models import Project
 
 
 async def create_meeting(
@@ -26,8 +28,9 @@ async def create_meeting(
     audio_path = None
     audio_size = None
     duration_seconds = None
-    user = None # Initialize user variable
-    
+    user = None  # Initialize user variable
+    project = None  # Initialize project variable
+
     if audio_file:
         file_extension = audio_filename.split('.')[-1] if audio_filename else 'mp3'
         audio_path = f"meetings/{uuid.uuid4()}.{file_extension}"
@@ -68,7 +71,6 @@ async def create_meeting(
     
     if not company_id:
         # Если нет проекта или у проекта нет company_id, берем у организатора
-        from src.users.models import User
         user_result = await db.execute(select(User).where(User.id == user_id))
         user = user_result.scalars().first()
         if user:
@@ -76,11 +78,13 @@ async def create_meeting(
 
     meeting = Meeting(
         title=data.title,
+        subtitle=data.subtitle,
         project_id=project_id,
         organizer_id=user_id,
         company_id=company_id,
         meeting_date=data.meeting_date or datetime.now(timezone.utc),
         duration=duration_seconds,  # Сохраняем в секундах
+        importance=data.importance,
         comments=data.comments,
         notes=data.notes,
         audio_file_path=audio_path,
@@ -180,6 +184,39 @@ async def move_meeting_to_project(
     meeting.project_id = project_id
     await db.commit()
     await db.refresh(meeting)
+
+    # Отправка уведомлений участникам нового проекта
+    if project_id:
+        from src.projects import selectors as project_selectors
+        from src.notifications import services as notification_services
+
+        project_members = await project_selectors.get_project_access(db, project_id)
+
+        # Получаем имя организатора
+        organizer_name = "Unknown"
+        organizer_result = await db.execute(select(User).where(User.id == meeting.organizer_id))
+        organizer = organizer_result.scalars().first()
+        if organizer:
+            organizer_name = f"{organizer.first_name} {organizer.last_name}"
+
+        # Получаем название проекта
+        project_result = await db.execute(select(Project).where(Project.id == project_id))
+        project = project_result.scalars().first()
+        project_name = project.name if project else "Unknown"
+
+        # Отправляем уведомления всем участникам, кроме организатора
+        for access in project_members:
+            if access.user_id != meeting.organizer_id:
+                await notification_services.create_notification(
+                    db=db,
+                    user_id=access.user_id,
+                    type="new_meeting",
+                    title="Новая встреча",
+                    message=f"{organizer_name} добавил(а) встречу в проект {project_name}",
+                    meeting_id=meeting.id,
+                    project_id=project_id
+                )
+
     return meeting
 
 
