@@ -1,0 +1,125 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+<style>
+.analytics-container {
+    padding: 2rem;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: #f8fafc;
+    min-height: calc(100vh - 60px);
+}
+.analytics-header {
+    margin-bottom: 2rem;
+}
+.analytics-header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0;
+}
+.analytics-header p {
+    color: #64748b;
+    margin-top: 0.5rem;
+    font-size: 1.1rem;
+}
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+}
+.stat-card {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    display: flex;
+    align-items: center;
+    transition: transform 0.2s, box-shadow 0.2s;
+    border: 1px solid #e2e8f0;
+}
+.stat-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+}
+.stat-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.75rem;
+    margin-right: 1.5rem;
+    flex-shrink: 0;
+}
+.icon-users { background: #dbeafe; color: #3b82f6; }
+.icon-projects { background: #dcfce7; color: #22c55e; }
+.icon-meetings { background: #fef3c7; color: #f59e0b; }
+.icon-companies { background: #f3e8ff; color: #a855f7; }
+
+.stat-details h3 {
+    margin: 0;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    font-weight: 600;
+}
+.stat-details .stat-value {
+    margin: 0.5rem 0 0 0;
+    font-size: 2.25rem;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1;
+}
+</style>
+
+<div class="analytics-container">
+    <div class="analytics-header">
+        <h1>Общая Аналитика</h1>
+        <p>Ключевые показатели вашей системы в реальном времени</p>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon icon-users">
+                <i class="fa-solid fa-users"></i>
+            </div>
+            <div class="stat-details">
+                <h3>Пользователи</h3>
+                <div class="stat-value">{{ users_count }}</div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon icon-projects">
+                <i class="fa-solid fa-diagram-project"></i>
+            </div>
+            <div class="stat-details">
+                <h3>Проекты</h3>
+                <div class="stat-value">{{ projects_count }}</div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon icon-meetings">
+                <i class="fa-solid fa-calendar-days"></i>
+            </div>
+            <div class="stat-details">
+                <h3>Встречи</h3>
+                <div class="stat-value">{{ meetings_count }}</div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon icon-companies">
+                <i class="fa-solid fa-building"></i>
+            </div>
+            <div class="stat-details">
+                <h3>Компании</h3>
+                <div class="stat-value">{{ companies_count }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -63,6 +63,7 @@ async def create_meeting(
     company_id = None
     if project_id:
         # Если встреча привязана к проекту, берем company_id проекта
+        from src.projects.models import Project
         project_result = await db.execute(select(Project).where(Project.id == project_id))
         project = project_result.scalars().first()
         if project:
@@ -83,6 +84,7 @@ async def create_meeting(
         company_id=company_id,
         meeting_date=data.meeting_date or datetime.now(timezone.utc),
         duration=duration_seconds,  # Сохраняем в секундах
+        importance=data.importance,
         comments=data.comments,
         notes=data.notes,
         audio_file_path=audio_path,

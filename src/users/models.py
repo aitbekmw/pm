@@ -25,6 +25,14 @@ class User(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
+    def __str__(self) -> str:
+        try:
+            company_name = self.company.name if self.company else ""
+        except Exception:
+            company_name = ""
+        suffix = f" [{company_name}]" if company_name else ""
+        return f"{self.first_name} {self.last_name} ({self.ad_account}){suffix}"
+
     # Relationship
     company: Mapped["Company | None"] = relationship("Company", back_populates="users", lazy="select")
     projects: Mapped[list["Project"]] = relationship(

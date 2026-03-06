@@ -41,6 +41,9 @@ class Meeting(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     
+    def __str__(self) -> str:
+        return self.title
+
     # Relationship для загрузки организатора
     organizer: Mapped["User | None"] = relationship("User", foreign_keys=[organizer_id], lazy="select")
     company: Mapped["Company | None"] = relationship("Company", back_populates="meetings", lazy="select")
