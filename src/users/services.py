@@ -147,6 +147,46 @@ async def login_with_ad(db: AsyncSession, username: str, password: str) -> Optio
     return session_id
 
 
+async def upsert_push_token(
+    db: AsyncSession,
+    user_id: int,
+    token: str,
+    device_type: Optional[str] = None,
+) -> None:
+    """Зарегистрировать push-токен (upsert — не дублировать)."""
+    from src.users.models import PushToken
+    result = await db.execute(select(PushToken).where(PushToken.token == token))
+    existing = result.scalars().first()
+    if existing:
+        # Токен уже есть — обновляем user_id и device_type (вдруг перелогинились)
+        existing.user_id = user_id
+        if device_type:
+            existing.device_type = device_type
+    else:
+        db.add(PushToken(user_id=user_id, token=token, device_type=device_type))
+    await db.commit()
+
+
+async def delete_push_token(db: AsyncSession, user_id: int, token: str) -> bool:
+    """Удалить push-токен пользователя. Возвращает True если токен был найден и удалён."""
+    from src.users.models import PushToken
+    result = await db.execute(
+        delete(PushToken).where(PushToken.token == token, PushToken.user_id == user_id)
+    )
+    await db.commit()
+    return result.rowcount > 0
+
+
+async def get_push_tokens_for_users(db: AsyncSession, user_ids: list[int]) -> list[str]:
+    """Получить все push-токены для списка пользователей."""
+    from src.users.models import PushToken
+    if not user_ids:
+        return []
+    result = await db.execute(
+        select(PushToken.token).where(PushToken.user_id.in_(user_ids))
+    )
+    return list(result.scalars().all())
+
 async def logout(db: AsyncSession, session_id: str) -> None:
     await db.execute(delete(Session).where(Session.session_id == session_id))
     await db.commit()

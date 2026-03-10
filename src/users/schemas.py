@@ -34,3 +34,13 @@ class UserUpdateRole(BaseModel):
 class UserList(BaseModel):
     users: List[UserOut]
     total: int
+
+
+class PushTokenRegister(BaseModel):
+    token: str
+    device_type: Optional[str] = None  # 'ios' | 'android'
+
+
+class PushTokenDelete(BaseModel):
+    token: str
+
