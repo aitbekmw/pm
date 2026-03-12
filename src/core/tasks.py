@@ -96,7 +96,15 @@ async def process_meeting(ctx, meeting_id: int):
             processing.progress = 55
             await db.commit()
             
+            # Форматируем общий текст
             formatted_transcript = await ai_service.format_transcript(transcript_text)
+            
+            # Форматируем сегменты для интерактивного режима
+            segments = transcript_data.get('segments', [])
+            if segments:
+                logger.info(f"Formatting {len(segments)} segments for meeting {meeting_id}...")
+                updated_segments = await ai_service.format_segments(segments)
+                transcript_data['segments'] = updated_segments
             
             transcript_obj = Transcript(
                 meeting_id=meeting_id,
@@ -301,6 +309,7 @@ async def process_meeting_from_subtitle(ctx, meeting_id: int):
             processing.progress = 20
             await db.commit()
             
+            # Форматируем общий текст
             formatted_transcript = await ai_service.format_transcript(transcript_text)
 
             # Сохраняем транскрипт из subtitle (отформатированный)
