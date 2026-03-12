@@ -91,9 +91,16 @@ async def process_meeting(ctx, meeting_id: int):
             if not transcript_text:
                 raise Exception("Transcript text is empty")
             
+            # Форматирование транскрипта
+            processing.current_stage = "transcription_formatting"
+            processing.progress = 55
+            await db.commit()
+            
+            formatted_transcript = await ai_service.format_transcript(transcript_text)
+            
             transcript_obj = Transcript(
                 meeting_id=meeting_id,
-                content=transcript_text,
+                content=formatted_transcript,
                 timestamps=transcript_data
             )
             db.add(transcript_obj)
@@ -196,7 +203,7 @@ async def process_meeting(ctx, meeting_id: int):
                 title=meeting.title,
                 meeting_date=meeting.meeting_date,
                 duration=meeting.duration,
-                transcript=transcript_text,
+                transcript=formatted_transcript,
                 summary=summary_text,
                 notes=notes_data,
                 organizer_name=organizer_name
@@ -289,10 +296,17 @@ async def process_meeting_from_subtitle(ctx, meeting_id: int):
         try:
             transcript_text = meeting.subtitle
 
-            # Сохраняем транскрипт из subtitle
+            # Форматирование
+            processing.current_stage = "transcription_formatting"
+            processing.progress = 20
+            await db.commit()
+            
+            formatted_transcript = await ai_service.format_transcript(transcript_text)
+
+            # Сохраняем транскрипт из subtitle (отформатированный)
             transcript_obj = Transcript(
                 meeting_id=meeting_id,
-                content=transcript_text,
+                content=formatted_transcript,
                 timestamps=None
             )
             db.add(transcript_obj)
@@ -360,7 +374,7 @@ async def process_meeting_from_subtitle(ctx, meeting_id: int):
                 title=meeting.title,
                 meeting_date=meeting.meeting_date,
                 duration=meeting.duration,
-                transcript=transcript_text,
+                transcript=formatted_transcript,
                 summary=summary_text,
                 notes=notes_data,
                 organizer_name=organizer_name

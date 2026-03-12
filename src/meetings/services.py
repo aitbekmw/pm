@@ -256,6 +256,24 @@ async def update_note(
     return note
 
 
+async def update_transcript(
+    db: AsyncSession,
+    meeting_id: int,
+    content: str
+) -> Optional[Transcript]:
+    """Обновить транскрипт встречи"""
+    result = await db.execute(select(Transcript).where(Transcript.meeting_id == meeting_id))
+    transcript = result.scalars().first()
+    
+    if not transcript:
+        return None
+    
+    transcript.content = content
+    await db.commit()
+    await db.refresh(transcript)
+    return transcript
+
+
 async def delete_note(db: AsyncSession, note_id: int) -> bool:
     """Удалить заметку"""
     result = await db.execute(select(Note).where(Note.id == note_id))
