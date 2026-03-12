@@ -548,6 +548,51 @@ async def update_meeting(
     return updated_meeting
 
 
+@router.put("/{meeting_id}/transcript", response_model=schemas.TranscriptOut)
+async def update_meeting_transcript(
+    meeting_id: int,
+    data: schemas.TranscriptUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Обновить транскрипт встречи"""
+    meeting = await selectors.get_meeting_by_id(db, meeting_id)
+    if not meeting:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Meeting not found"
+        )
+    
+    # Check permissions (organizer, Admin, or Manager project owner)
+    if meeting.organizer_id == current_user.id:
+        pass  # Organizer can update
+    elif current_user.role == "Admin":
+        pass  # Admin can update
+    elif meeting.project_id and current_user.role == "Manager":
+        can_edit = await project_selectors.check_user_can_edit_project(
+            db, current_user.id, current_user.role, meeting.project_id
+        )
+        if not can_edit:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only organizer, Admin or Manager project owner can update transcript"
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only organizer, Admin or Manager project owner can update transcript"
+        )
+    
+    transcript = await services.update_transcript(db, meeting_id, data.content)
+    if not transcript:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transcript not found for this meeting"
+        )
+        
+    return transcript
+
+
 @router.delete("/{meeting_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_meeting(
     meeting_id: int,

@@ -291,5 +291,44 @@ class AIService:
             logger.error(f"Error extracting action items: {e}", exc_info=True)
             return []
 
+    async def format_transcript(self, transcript_text: str) -> Optional[str]:
+        """Форматирование транскрипта в Markdown с подсветкой непонятных слов"""
+        try:
+            if not transcript_text or not transcript_text.strip():
+                logger.warning("transcript_text is empty for formatting")
+                return transcript_text
+
+            prompt = f"""Ниже приведен сырой текст транскрипта аудиозаписи.
+Пожалуйста, отформатируй его в читаемый Markdown.
+Разбей на абзацы логически.
+ЕСЛИ в тексте есть слова, которые звучат странно, бессмысленно, или кажутся ошибкой распознавания речи (непонятные слова), оберни их в HTML тег <span style="color: red;">слово</span>.
+Не меняй сам текст и не удаляй слова, только добавь форматирование и абзацы.
+
+Транскрипт:
+{transcript_text}"""
+
+            system_instruction = "Ты - ассистент по форматированию текста. Твоя задача - сделать сырой транскрипт читаемым, используя Markdown, и выделить потенциальные ошибки транскрибации красным цветом с помощью HTML."
+            
+            model_with_instruction = genai.GenerativeModel(
+                model_name=settings.GEMINI_MODEL,
+                system_instruction=system_instruction
+            )
+            
+            response = model_with_instruction.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.3, # Меньше креативности, больше точности к исходному тексту
+                    max_output_tokens=4000,
+                )
+            )
+
+            result = response.text
+            logger.info(f"Transcript formatting completed, length: {len(result) if result else 0}")
+            return result
+
+        except Exception as e:
+            logger.error(f"Error formatting transcript: {e}", exc_info=True)
+            # В случае ошибки возвращаем хотя бы исходный текст
+            return transcript_text
 
 ai_service = AIService()
