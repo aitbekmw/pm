@@ -279,8 +279,8 @@ async def get_meetings_with_filters(
     organizer_id: Optional[int] = None,
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
-    min_duration: Optional[float] = None,
-    max_duration: Optional[float] = None,
+    duration_from: Optional[int] = None,
+    duration_to: Optional[int] = None,
     sort_by: str = "date_desc",
     skip: int = 0,
     limit: int = 50,
@@ -298,9 +298,9 @@ async def get_meetings_with_filters(
     - organizer_id: ID организатора встречи
     - start_date: начало периода
     - end_date: конец периода
-    - min_duration: минимальная длительность в минутах (поддерживает decimal)
-    - max_duration: максимальная длительность в минутах (поддерживает decimal)
-    
+    - duration_from: минимальная длительность в секундах (или null если нет нижней границы)
+    - duration_to: максимальная длительность в секундах (или null если нет верхней границы)
+
     Параметры сортировки (sort_by - может быть несколько, разделены запятыми):
     - date_asc: старые → новые
     - date_desc: новые → старые (по умолчанию)
@@ -358,16 +358,12 @@ async def get_meetings_with_filters(
     if end_date is not None:
         filters.append(Meeting.meeting_date <= end_date)
     
-    if min_duration is not None:
-        # Преобразуем минуты в секунды для сравнения
-        min_duration_seconds = int(min_duration * 60)
-        filters.append(Meeting.duration >= min_duration_seconds)
-    
-    if max_duration is not None:
-        # Преобразуем минуты в секунды для сравнения
-        max_duration_seconds = int(max_duration * 60)
-        filters.append(Meeting.duration <= max_duration_seconds)
-    
+    if duration_from is not None:
+        filters.append(Meeting.duration >= duration_from)
+
+    if duration_to is not None:
+        filters.append(Meeting.duration <= duration_to)
+
     query = select(Meeting).where(and_(*filters)) if filters else select(Meeting)
     
     # Загружаем организатора с встречей для отображения полной информации
@@ -430,8 +426,8 @@ async def get_project_meetings_with_filters(
     organizer_id: Optional[int] = None,
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
-    min_duration: Optional[float] = None,
-    max_duration: Optional[float] = None,
+    duration_from: Optional[int] = None,
+    duration_to: Optional[int] = None,
     sort_by: str = "date_desc",
     skip: int = 0,
     limit: int = 50,
@@ -445,9 +441,9 @@ async def get_project_meetings_with_filters(
     - organizer_id: ID организатора встречи
     - start_date: начало периода
     - end_date: конец периода
-    - min_duration: минимальная длительность в минутах (поддерживает decimal)
-    - max_duration: максимальная длительность в минутах (поддерживает decimal)
-    
+    - duration_from: минимальная длительность в секундах (или null если нет нижней границы)
+    - duration_to: максимальная длительность в секундах (или null если нет верхней границы)
+
     Параметры сортировки (sort_by - может быть несколько, разделены запятыми):
     - date_asc: старые → новые
     - date_desc: новые → старые (по умолчанию)
@@ -470,16 +466,12 @@ async def get_project_meetings_with_filters(
     if end_date is not None:
         filters.append(Meeting.meeting_date <= end_date)
     
-    if min_duration is not None:
-        # Преобразуем минуты в секунды для сравнения
-        min_duration_seconds = int(min_duration * 60)
-        filters.append(Meeting.duration >= min_duration_seconds)
-    
-    if max_duration is not None:
-        # Преобразуем минуты в секунды для сравнения
-        max_duration_seconds = int(max_duration * 60)
-        filters.append(Meeting.duration <= max_duration_seconds)
-    
+    if duration_from is not None:
+        filters.append(Meeting.duration >= duration_from)
+
+    if duration_to is not None:
+        filters.append(Meeting.duration <= duration_to)
+
     query = select(Meeting).where(and_(*filters))
     
     # Загружаем организатора с встречей для отображения полной информации
