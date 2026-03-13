@@ -90,8 +90,8 @@ async def get_my_meetings(
     q: Optional[str] = Query(None, min_length=1, description="Поиск по названию встречи"),
     start_date: Optional[datetime] = Query(None, description="Начало периода (ISO 8601)"),
     end_date: Optional[datetime] = Query(None, description="Конец периода (ISO 8601)"),
-    min_duration: Optional[float] = Query(None, ge=0, description="Минимальная длительность в минутах"),
-    max_duration: Optional[float] = Query(None, ge=0, description="Максимальная длительность в минутах"),
+    duration_from: Optional[int] = Query(None, ge=0, description="Минимальная длительность в секундах (или null если нет нижней границы)"),
+    duration_to: Optional[int] = Query(None, ge=0, description="Максимальная длительность в секундах (или null если нет верхней границы)"),
     sort_date: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по дате"),
     sort_duration: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по длительности"),
     sort_importance: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по важности"),
@@ -108,7 +108,7 @@ async def get_my_meetings(
     Фильтрация:
     - q: поиск по названию
     - start_date / end_date: диапазон дат (ISO 8601)
-    - min_duration / max_duration: диапазон длительности в минутах
+    - duration_from / duration_to: диапазон длительности в секундах (null если нет границы)
 
     Сортировка (можно комбинировать):
     - sort_date=asc|desc
@@ -140,8 +140,8 @@ async def get_my_meetings(
         organizer_id=current_user.id,   # ← только мои встречи
         start_date=start_date,
         end_date=end_date,
-        min_duration=min_duration,
-        max_duration=max_duration,
+        duration_from=duration_from,
+        duration_to=duration_to,
         sort_by=sort_by,
         skip=skip,
         limit=limit,
@@ -163,10 +163,10 @@ async def get_meetings(
         organizer_id: Optional[int] = Query(None),
         start_date: Optional[datetime] = Query(None),
         end_date: Optional[datetime] = Query(None),
-        min_duration: Optional[float] = Query(None, ge=0,
-                                              description="Минимальная длительность в минутах (поддерживаются decimals, e.g. 0.5)"),
-        max_duration: Optional[float] = Query(None, ge=0,
-                                              description="Максимальная длительность в минутах (поддерживаются decimals, e.g. 0.5)"),
+        duration_from: Optional[int] = Query(None, ge=0,
+                                              description="Минимальная длительность в секундах (или null если нет нижней границы)"),
+        duration_to: Optional[int] = Query(None, ge=0,
+                                              description="Максимальная длительность в секундах (или null если нет верхней границы)"),
         sort_date: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по дате"),
         sort_duration: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по длительности"),
         sort_importance: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по важности"),
@@ -184,7 +184,7 @@ async def get_meetings(
     - organizer_id: ID организатора встречи
     - start_date: начало периода (ISO 8601 формат)
     - end_date: конец периода (ISO 8601 формат)
-    - min_duration / max_duration: диапазон длительности в минутах (поддерживаются decimals)
+    - duration_from / duration_to: диапазон длительности в секундах (null если нет границы)
 
     Сортировка (несколько полей одновременно):
     - sort_date=asc|desc: сортировка по дате
@@ -228,8 +228,8 @@ async def get_meetings(
             organizer_id=organizer_id,
             start_date=start_date,
             end_date=end_date,
-            min_duration=min_duration,
-            max_duration=max_duration,
+            duration_from=duration_from,
+            duration_to=duration_to,
             sort_by=sort_by,
             skip=skip,
             limit=limit,
@@ -245,8 +245,8 @@ async def get_meetings(
             organizer_id=organizer_id,
             start_date=start_date,
             end_date=end_date,
-            min_duration=min_duration,
-            max_duration=max_duration,
+            duration_from=duration_from,
+            duration_to=duration_to,
             sort_by=sort_by,
             skip=skip,
             limit=limit,
