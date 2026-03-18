@@ -3,11 +3,14 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import joinedload
 from datetime import datetime, timezone
 from typing import Optional
+import io
+import uuid
 
 from src.projects.models import Project, ProjectAccess
 from src.projects.schemas import ProjectCreate, ProjectUpdate
 from src.projects import selectors
 from src.users.models import User
+from src.core.storage import storage
 
 
 async def create_project(
@@ -206,4 +209,78 @@ async def revoke_project_access(
     )
     await db.commit()
     return result.rowcount > 0
+
+
+async def upload_project_cover(
+    db: AsyncSession,
+    project_id: int,
+    file_bytes: bytes,
+    original_filename: str
+) -> Optional[Project]:
+    """
+    Загрузить обложку проекта в S3
+
+    Args:
+        db: Database session
+        project_id: ID проекта
+        file_bytes: Байты файла изображения
+        original_filename: Оригинальное имя файла
+
+    Returns:
+        Updated Project object или None если проект не найден
+    """
+    project = await selectors.get_project_by_id(db, project_id)
+    if not project:
+        return None
+
+    # Удалить старую обложку если существует
+    if project.cover:
+        storage.delete_file(project.cover)
+
+    # Генерируем уникальное имя для файла
+    file_ext = original_filename.rsplit('.', 1)[-1] if '.' in original_filename else 'jpg'
+    unique_filename = f"{uuid.uuid4()}.{file_ext}"
+
+    # Формируем путь: project_covers/project_name_id/filename
+    project_folder = f"project_covers/{project.name.replace(' ', '_')}_{project_id}"
+    object_name = f"{project_folder}/{unique_filename}"
+
+    # Загружаем файл
+    file_obj = io.BytesIO(file_bytes)
+    uploaded_path = storage.upload_file(file_obj, object_name, content_type="image/jpeg")
+
+    if not uploaded_path:
+        return None
+
+    # Обновляем проект с путем к обложке
+    project.cover = uploaded_path
+    await db.commit()
+    await db.refresh(project)
+
+    return project
+
+
+async def delete_project_cover(db: AsyncSession, project_id: int) -> Optional[Project]:
+    """
+    Удалить обложку проекта
+
+    Args:
+        db: Database session
+        project_id: ID проекта
+
+    Returns:
+        Updated Project object или None если проект не найден
+    """
+    project = await selectors.get_project_by_id(db, project_id)
+    if not project:
+        return None
+
+    # Удалить файл из S3 если существует
+    if project.cover:
+        storage.delete_file(project.cover)
+        project.cover = None
+        await db.commit()
+        await db.refresh(project)
+
+    return project
 

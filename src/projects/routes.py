@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from datetime import datetime
@@ -377,4 +377,96 @@ async def revoke_access(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Access not found"
         )
+
+
+@router.post("/{project_id}/cover", response_model=schemas.ProjectCoverUploadResponse, status_code=status.HTTP_201_CREATED)
+async def upload_project_cover(
+    project_id: int,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Загрузить обложку проекта (только Admin или Manager владелец проекта)
+
+    Загружает изображение в качестве обложки проекта в S3.
+    Файл сохраняется в папке project_covers/{project_name}_{project_id}/
+    """
+    # Проверить права на редактирование
+    can_edit = await selectors.check_user_can_edit_project(db, current_user.id, current_user.role, project_id)
+    if not can_edit:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Only Admin or Manager project owner can upload cover"
+        )
+
+    # Проверить существует ли проект
+    project = await selectors.get_project_by_id(db, project_id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+
+    # Проверить размер файла (максимум 10MB)
+    file_bytes = await file.read()
+    if len(file_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File size too large. Maximum size is 10MB"
+        )
+
+    # Проверить формат файла
+    allowed_formats = {'image/jpeg', 'image/png', 'image/gif', 'image/webp'}
+    if file.content_type not in allowed_formats:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported file format. Allowed: JPEG, PNG, GIF, WebP"
+        )
+
+    # Загрузить обложку
+    updated_project = await services.upload_project_cover(
+        db, project_id, file_bytes, file.filename or "cover.jpg"
+    )
+
+    if not updated_project:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to upload cover"
+        )
+
+    return schemas.ProjectCoverUploadResponse(
+        id=updated_project.id,
+        cover=updated_project.cover,
+        message="Cover uploaded successfully"
+    )
+
+
+@router.delete("/{project_id}/cover", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_project_cover(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Удалить обложку проекта (только Admin или Manager владелец проекта)
+
+    Удаляет обложку проекта из S3 и очищает поле cover в БД.
+    """
+    # Проверить права на редактирование
+    can_edit = await selectors.check_user_can_edit_project(db, current_user.id, current_user.role, project_id)
+    if not can_edit:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Only Admin or Manager project owner can delete cover"
+        )
+
+    # Проверить существует ли проект
+    project = await selectors.get_project_by_id(db, project_id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+
+    # Удалить обложку
+    await services.delete_project_cover(db, project_id)
 
