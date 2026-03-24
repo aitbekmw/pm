@@ -383,7 +383,7 @@ async def revoke_access(
 @router.post("/{project_id}/cover", response_model=schemas.ProjectCoverUploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_project_cover(
     project_id: int,
-    file: UploadFile = File(..., description="Изображение обложки проекта (JPEG, PNG, GIF или WebP, макс. 10MB)"),
+    file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -518,6 +518,7 @@ async def get_project_cover_url(
     
     **Ответы:**
     - 200: URL успешно получена
+    - 403: Нет доступа к проекту
     - 404: Проект не найден или обложка не загружена
     - 500: Ошибка при генерации URL
     """
@@ -527,6 +528,16 @@ async def get_project_cover_url(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
+        )
+
+    # Проверить доступ пользователя к проекту
+    has_access = await selectors.check_user_has_project_access(
+        db, current_user.id, current_user.role, project_id
+    )
+    if not has_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied to this project"
         )
 
     # Проверить существует ли обложка
