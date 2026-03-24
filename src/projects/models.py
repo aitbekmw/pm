@@ -17,6 +17,7 @@ class Project(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     confluence_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     jira_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    cover: Mapped[str | None] = mapped_column(String, nullable=True)  # S3 path to project cover image
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id"), nullable=True)  # TODO: make NOT NULL after backfill

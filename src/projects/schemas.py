@@ -8,6 +8,7 @@ class ProjectBase(BaseModel):
     description: Optional[str] = None
     confluence_data: Optional[dict] = None
     jira_data: Optional[dict] = None
+    cover: Optional[str] = None
 
 
 class ProjectUserCreate(BaseModel):
@@ -25,6 +26,7 @@ class ProjectUpdate(BaseModel):
     description: Optional[str] = None
     confluence_data: Optional[dict] = None
     jira_data: Optional[dict] = None
+    cover: Optional[str] = None
 
 
 class ProjectOut(ProjectBase):
@@ -90,6 +92,7 @@ class ProjectListOut(BaseModel):
     id: int
     name: str
     description: Optional[str]
+    cover: Optional[str] = None
     is_archived: bool
     members_count: Optional[int] = 0
     meetings_count: Optional[int] = 0
@@ -97,4 +100,24 @@ class ProjectListOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ProjectCoverUploadResponse(BaseModel):
+    """Ответ при загрузке обложки"""
+    id: int
+    cover: Optional[str]
+    message: str
+
+    class Config:
+        from_attributes = True
+
+
+class ProjectCoverUrlResponse(BaseModel):
+    """Ответ с URL обложки проекта"""
+    id: int
+    cover_url: Optional[str]
+
+    class Config:
+        from_attributes = True
+
 
