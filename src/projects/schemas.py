@@ -8,7 +8,6 @@ class ProjectBase(BaseModel):
     description: Optional[str] = None
     confluence_data: Optional[dict] = None
     jira_data: Optional[dict] = None
-    cover: Optional[str] = None
 
 
 class ProjectUserCreate(BaseModel):
@@ -31,6 +30,7 @@ class ProjectUpdate(BaseModel):
 
 class ProjectOut(ProjectBase):
     id: int
+    cover: Optional[str] = None
     is_archived: bool
     created_by: Optional[int]
     created_at: Optional[datetime]

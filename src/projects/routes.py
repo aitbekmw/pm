@@ -16,12 +16,101 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 @router.post("/", response_model=schemas.ProjectOut, status_code=status.HTTP_201_CREATED)
 async def create_project(
-    data: schemas.ProjectCreate,
+    name: str,
+    description: Optional[str] = None,
+    confluence_data: Optional[str] = None,
+    jira_data: Optional[str] = None,
+    users: Optional[str] = None,
+    cover: Optional[UploadFile] = File(None),
     current_user: User = Depends(require_manager_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Создать новый проект (только Manager или Admin)"""
-    project = await services.create_project(db, data, current_user.id)
+    """Создать новый проект (только Manager или Admin)
+    
+    **Параметры:**
+    - name: название проекта (обязательно)
+    - description: описание (опционально)
+    - confluence_data: JSON данные Confluence (опционально)
+    - jira_data: JSON данные Jira (опционально)
+    - users: JSON массив пользователей [{"id": 1, "role": "Manager"}] (опционально)
+    - cover: файл обложки JPEG/PNG/GIF/WebP макс. 10MB (опционально)
+    
+    **Отправка:**
+    Используйте multipart/form-data для отправки файла обложки
+    """
+    import json
+    
+    # Парсим JSON параметры
+    confluence_data_dict = None
+    if confluence_data:
+        try:
+            confluence_data_dict = json.loads(confluence_data)
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid confluence_data JSON"
+            )
+    
+    jira_data_dict = None
+    if jira_data:
+        try:
+            jira_data_dict = json.loads(jira_data)
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid jira_data JSON"
+            )
+    
+    users_list = None
+    if users:
+        try:
+            users_list = json.loads(users)
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid users JSON"
+            )
+    
+    # Проверяем обложку если она передана
+    cover_bytes = None
+    cover_filename = None
+    if cover:
+        cover_bytes = await cover.read()
+        
+        # Проверить размер файла (максимум 10MB)
+        if len(cover_bytes) > 10 * 1024 * 1024:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="File size too large. Maximum size is 10MB"
+            )
+
+        # Проверить формат файла
+        allowed_formats = {'image/jpeg', 'image/png', 'image/gif', 'image/webp'}
+        if cover.content_type not in allowed_formats:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Unsupported file format. Allowed: JPEG, PNG, GIF, WebP"
+            )
+        
+        cover_filename = cover.filename or "cover.jpg"
+    
+    # Создаем объект ProjectCreate
+    project_data = schemas.ProjectCreate(
+        name=name,
+        description=description,
+        confluence_data=confluence_data_dict,
+        jira_data=jira_data_dict,
+        users=users_list
+    )
+    
+    # Создаем проект с обложкой если она есть
+    project = await services.create_project(
+        db=db, 
+        data=project_data, 
+        user_id=current_user.id,
+        cover_bytes=cover_bytes,
+        cover_filename=cover_filename
+    )
     
     # Добавить счетчики
     members_count = await selectors.get_project_members_count(db, project.id)
