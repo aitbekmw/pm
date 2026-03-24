@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from datetime import datetime
@@ -498,7 +498,7 @@ async def delete_project_cover(
 
 @router.get("/{project_id}/cover-url", response_model=schemas.ProjectCoverUrlResponse)
 async def get_project_cover_url(
-    project_id: int = Query(..., description="ID проекта"),
+    project_id: int = Path(..., description="ID проекта"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
