@@ -21,6 +21,7 @@ async def create_project(
     confluence_data: Optional[str] = Form(None),
     jira_data: Optional[str] = Form(None),
     users: Optional[str] = Form(None),
+    cover_name: Optional[str] = Form(None),
     cover: Optional[UploadFile] = File(None),
     current_user: User = Depends(require_manager_or_admin),
     db: AsyncSession = Depends(get_db)
@@ -33,10 +34,11 @@ async def create_project(
     - confluence_data: JSON данные Confluence (опционально)
     - jira_data: JSON данные Jira (опционально)
     - users: JSON массив пользователей [{"id": 1, "role": "Manager"}] (опционально)
-    - cover: файл обложки JPEG/PNG/GIF/WebP макс. 10MB (опционально)
+    - cover_name: строка с названием дефолтной иконки (default-blue, default-red и т.д.) - опционально
+    - cover: файл обложки JPEG/PNG/GIF/WebP макс. 10MB - опционально
     
     **Отправка:**
-    Используйте multipart/form-data для отправки файла обложки
+    Используйте multipart/form-data
     """
     import json
     
@@ -71,20 +73,21 @@ async def create_project(
                 detail="Invalid users JSON"
             )
     
-    # Проверяем обложку если она передана
+    # Проверяем обложку если она передана (либо как файл, либо как строка дефолтной иконки)
     cover_bytes = None
     cover_filename = None
+    cover_default = None
+    
     if cover:
+        # Загружается как файл
         cover_bytes = await cover.read()
         
-        # Проверить размер файла (максимум 10MB)
         if len(cover_bytes) > 10 * 1024 * 1024:
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 detail="File size too large. Maximum size is 10MB"
             )
 
-        # Проверить формат файла
         allowed_formats = {'image/jpeg', 'image/png', 'image/gif', 'image/webp'}
         if cover.content_type not in allowed_formats:
             raise HTTPException(
@@ -93,6 +96,22 @@ async def create_project(
             )
         
         cover_filename = cover.filename or "cover.jpg"
+    
+    elif cover_name:
+        # Используется дефолтная иконка
+        if '/' in cover_name or '\\' in cover_name or '..' in cover_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid cover name. Must not contain slashes or special sequences"
+            )
+        
+        if not cover_name.replace('-', '').replace('_', '').isalnum():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid cover name. Only letters, numbers, hyphens and underscores allowed"
+            )
+        
+        cover_default = cover_name
     
     # Создаем объект ProjectCreate
     project_data = schemas.ProjectCreate(
@@ -109,7 +128,8 @@ async def create_project(
         data=project_data, 
         user_id=current_user.id,
         cover_bytes=cover_bytes,
-        cover_filename=cover_filename
+        cover_filename=cover_filename,
+        cover_default=cover_default
     )
     
     # Добавить счетчики

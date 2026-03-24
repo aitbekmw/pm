@@ -1,6 +1,7 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 from typing import Optional
 from datetime import datetime
+from src.core.storage import storage
 
 
 class ProjectBase(BaseModel):
@@ -40,6 +41,13 @@ class ProjectOut(ProjectBase):
 
     class Config:
         from_attributes = True
+    
+    @field_serializer('cover')
+    def serialize_cover(self, value: Optional[str], _info):
+        """Генерирует прямую ссылку на обложку проекта """
+        if value:
+            return storage.generate_direct_url(value)
+        return None
 
 
 class ProjectAccessBase(BaseModel):
@@ -101,6 +109,13 @@ class ProjectListOut(BaseModel):
     class Config:
         from_attributes = True
 
+    @field_serializer('cover')
+    def serialize_cover(self, value: Optional[str], _info):
+        """Генерирует прямую ссылку на обложку проекта """
+        if value:
+            return storage.generate_direct_url(value)
+        return None
+
 
 class ProjectCoverUploadResponse(BaseModel):
     """Ответ при загрузке обложки"""
@@ -110,6 +125,13 @@ class ProjectCoverUploadResponse(BaseModel):
 
     class Config:
         from_attributes = True
+    
+    @field_serializer('cover')
+    def serialize_cover(self, value: Optional[str], _info):
+        """Генерирует прямую ссылку на обложку проекта """
+        if value:
+            return storage.generate_direct_url(value)
+        return None
 
 
 class ProjectCoverUrlResponse(BaseModel):

@@ -18,7 +18,8 @@ async def create_project(
     data: ProjectCreate, 
     user_id: int,
     cover_bytes: Optional[bytes] = None,
-    cover_filename: Optional[str] = None
+    cover_filename: Optional[str] = None,
+    cover_default: Optional[str] = None
 ) -> Project:
     """Создать новый проект
     
@@ -28,6 +29,7 @@ async def create_project(
         user_id: ID создателя проекта
         cover_bytes: Опциональные байты файла обложки
         cover_filename: Опциональное имя файла обложки
+        cover_default: Опциональное имя дефолтной обложки (default-blue, default-red)
     """
     # Получить пользователя для наследования company_id
     user_result = await db.execute(select(User).where(User.id == user_id))
@@ -41,7 +43,8 @@ async def create_project(
         jira_data=data.jira_data,
         created_by=user_id,
         company_id=company_id,
-        is_archived=False
+        is_archived=False,
+        cover=cover_default  # Установить дефолтную обложку если есть
     )
     db.add(project)
     await db.flush()
@@ -75,7 +78,7 @@ async def create_project(
     await db.commit()
     await db.refresh(project)
     
-    # Загрузить обложку если она передана
+    # Загрузить обложку если она передана как файл
     if cover_bytes and cover_filename:
         updated_project = await upload_project_cover(
             db, project.id, cover_bytes, cover_filename
@@ -303,12 +306,15 @@ async def delete_project_cover(db: AsyncSession, project_id: int) -> Optional[Pr
     if not project:
         return None
 
-    # Удалить файл из S3 если существует
-    if project.cover:
+    # Удалить файл из S3 если существует и это не дефолтная обложка
+    if project.cover and '/' in project.cover:
         storage.delete_file(project.cover)
-        project.cover = None
-        await db.commit()
-        await db.refresh(project)
+    
+    project.cover = None
+    await db.commit()
+    await db.refresh(project)
 
     return project
+
+
 
