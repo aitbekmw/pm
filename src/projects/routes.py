@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile, Path
+from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile, Path, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from datetime import datetime
@@ -16,11 +16,11 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 @router.post("/", response_model=schemas.ProjectOut, status_code=status.HTTP_201_CREATED)
 async def create_project(
-    name: str,
-    description: Optional[str] = None,
-    confluence_data: Optional[str] = None,
-    jira_data: Optional[str] = None,
-    users: Optional[str] = None,
+    name: str = Form(...),
+    description: Optional[str] = Form(None),
+    confluence_data: Optional[str] = Form(None),
+    jira_data: Optional[str] = Form(None),
+    users: Optional[str] = Form(None),
     cover: Optional[UploadFile] = File(None),
     current_user: User = Depends(require_manager_or_admin),
     db: AsyncSession = Depends(get_db)
