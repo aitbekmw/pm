@@ -8,6 +8,7 @@ from src.users.models import User
 from src.core.permissions import get_current_user, require_manager_or_admin
 from src.projects import schemas, services, selectors
 from src.meetings import schemas as meeting_schemas, selectors as meeting_selectors
+from src.core.storage import storage
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -382,14 +383,29 @@ async def revoke_access(
 @router.post("/{project_id}/cover", response_model=schemas.ProjectCoverUploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_project_cover(
     project_id: int,
-    file: UploadFile = File(...),
+    file: UploadFile = File(..., description="Изображение обложки проекта (JPEG, PNG, GIF или WebP, макс. 10MB)"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Загрузить обложку проекта (только Admin или Manager владелец проекта)
+    """Загрузить обложку проекта
 
     Загружает изображение в качестве обложки проекта в S3.
-    Файл сохраняется в папке project_covers/{project_name}_{project_id}/
+    
+    **Требования к файлу:**
+    - Форматы: JPEG, PNG, GIF, WebP
+    - Максимальный размер: 10MB
+    
+    **Права доступа:** Только Admin или Manager владелец проекта
+    
+    **Результат:** Файл сохраняется в папке project_covers/{project_name}_{project_id}/ с уникальным UUID именем
+    
+    **Ответы:**
+    - 201: Обложка успешно загружена
+    - 403: Нет прав на загрузку обложки
+    - 404: Проект не найден
+    - 413: Размер файла превышает 10MB
+    - 415: Неподдерживаемый формат файла
+    - 500: Ошибка при загрузке
     """
     # Проверить права на редактирование
     can_edit = await selectors.check_user_can_edit_project(db, current_user.id, current_user.role, project_id)
@@ -447,9 +463,18 @@ async def delete_project_cover(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Удалить обложку проекта (только Admin или Manager владелец проекта)
+    """Удалить обложку проекта
 
     Удаляет обложку проекта из S3 и очищает поле cover в БД.
+    
+    **Права доступа:** Только Admin или Manager владелец проекта
+    
+    **Результат:** Файл удаляется из хранилища, проект остается без обложки
+    
+    **Ответы:**
+    - 204: Обложка успешно удалена
+    - 403: Нет прав на удаление обложки
+    - 404: Проект не найден
     """
     # Проверить права на редактирование
     can_edit = await selectors.check_user_can_edit_project(db, current_user.id, current_user.role, project_id)
@@ -469,4 +494,60 @@ async def delete_project_cover(
 
     # Удалить обложку
     await services.delete_project_cover(db, project_id)
+
+
+@router.get("/{project_id}/cover-url", response_model=schemas.ProjectCoverUrlResponse)
+async def get_project_cover_url(
+    project_id: int = Query(..., description="ID проекта"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Получить presigned URL обложки проекта
+
+    Возвращает временную подписанную ссылку на обложку проекта.
+    
+    **Характеристики URL:**
+    - Действительна: 1 час (3600 секунд)
+    - Автентификация: Не требуется
+    - Скачивание: Возможно напрямую без авторизации
+    
+    **Использование:**
+    - Используйте URL для загрузки изображения с фронтенда
+    - Не требует дополнительной аутентификации
+    - При истечении срока нужно запросить новый URL
+    
+    **Ответы:**
+    - 200: URL успешно получена
+    - 404: Проект не найден или обложка не загружена
+    - 500: Ошибка при генерации URL
+    """
+    # Проверить существует ли проект
+    project = await selectors.get_project_by_id(db, project_id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+
+    # Проверить существует ли обложка
+    if not project.cover:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project cover not found"
+        )
+
+    # Генерируем presigned URL (действителен 1 час)
+    cover_url = storage.generate_presigned_url(project.cover, expiration=3600)
+
+    if not cover_url:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate cover URL"
+        )
+
+    return schemas.ProjectCoverUrlResponse(
+        id=project.id,
+        cover_url=cover_url
+    )
+
 

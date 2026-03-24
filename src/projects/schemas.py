@@ -112,3 +112,12 @@ class ProjectCoverUploadResponse(BaseModel):
         from_attributes = True
 
 
+class ProjectCoverUrlResponse(BaseModel):
+    """Ответ с URL обложки проекта"""
+    id: int
+    cover_url: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
