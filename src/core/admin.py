@@ -40,8 +40,29 @@ class RestrictedModelView(BaseAdmin):
         return request.session.get("company_name") == "MDigital"
 
 
+class CompanyFilteredAdmin(BaseAdmin):
+    def is_visible(self, request: Request) -> bool:
+        return True
+
+    def is_accessible(self, request: Request) -> bool:
+        return True
+
+    def list_query(self, request: Request) -> select:
+        stmt = super().list_query(request)
+        company_name = request.session.get("company_name")
+        if company_name and company_name != "MDigital":
+            stmt = stmt.where(self.model.company.has(Company.name == company_name))
+        return stmt
+
+    def count_query(self, request: Request) -> select:
+        stmt = super().count_query(request)
+        company_name = request.session.get("company_name")
+        if company_name and company_name != "MDigital":
+            stmt = stmt.where(self.model.company.has(Company.name == company_name))
+        return stmt
+
+
 class CompanyAdmin(RestrictedModelView, model=Company):
-    category = "Организация"
     name = "Компания"
     name_plural = "Компании"
     icon = "fa-solid fa-building"
@@ -67,8 +88,7 @@ class CompanyAdmin(RestrictedModelView, model=Company):
     form_columns = [Company.name, Company.slug]
 
 
-class UserAdmin(RestrictedModelView, model=User):
-    category = "Организация"
+class UserAdmin(CompanyFilteredAdmin, model=User):
     name = "Пользователь"
     name_plural = "Пользователи"
     icon = "fa-solid fa-user"
@@ -115,7 +135,6 @@ class UserAdmin(RestrictedModelView, model=User):
 
 
 class ProjectAdmin(RestrictedModelView, model=Project):
-    category = "Управление"
     name = "Проект"
     name_plural = "Проекты"
     icon = "fa-solid fa-diagram-project"
@@ -126,7 +145,7 @@ class ProjectAdmin(RestrictedModelView, model=Project):
         Project.is_archived, Project.created_at, Project.updated_at,
     ]
     column_searchable_list = [Project.name, Project.description, "company.name"]
-    column_sortable_list = [Project.name, Project.is_archived, Project.created_at]
+    column_sortable_list = [Project.company, Project.name, Project.is_archived, Project.created_at]
 
     column_labels = {
         "company.name": "Компания",
@@ -154,7 +173,6 @@ class ProjectAdmin(RestrictedModelView, model=Project):
 
 
 class MeetingAdmin(RestrictedModelView, model=Meeting):
-    category = "Управление"
     name = "Встреча"
     name_plural = "Встречи"
     icon = "fa-solid fa-calendar-days"
@@ -170,7 +188,7 @@ class MeetingAdmin(RestrictedModelView, model=Meeting):
         Meeting.audio_file_path, Meeting.audio_file_size, Meeting.created_at, Meeting.updated_at,
     ]
     column_searchable_list = [Meeting.title, Meeting.comments, "company.name"]
-    column_sortable_list = [Meeting.title, Meeting.meeting_date, Meeting.importance, Meeting.created_at]
+    column_sortable_list = [Meeting.company, Meeting.title, Meeting.meeting_date, Meeting.importance, Meeting.created_at]
 
     column_labels = {
         "company.name": "Компания",
@@ -208,7 +226,6 @@ class MeetingAdmin(RestrictedModelView, model=Meeting):
 
 class AnalyticsView(BaseView):
     name = "Аналитика"
-    category = "Статистика"
     icon = "fa-solid fa-chart-pie"
 
     def is_visible(self, request: Request) -> bool:
@@ -219,18 +236,78 @@ class AnalyticsView(BaseView):
 
     @expose("/analytics", methods=["GET"])
     async def analytics_page(self, request: Request):
+        from datetime import datetime
+        start_date_str = request.query_params.get("start_date")
+        end_date_str = request.query_params.get("end_date")
+        
+        start_date = None
+        end_date = None
+        
+        try:
+            if start_date_str:
+                start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+            if end_date_str:
+                # Set end_date to end of the day
+                end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+        except ValueError:
+            pass
+
+        def apply_date_filter(stmt, model):
+            if start_date:
+                stmt = stmt.where(model.created_at >= start_date)
+            if end_date:
+                stmt = stmt.where(model.created_at <= end_date)
+            return stmt
+
+        # For Meeting duration sum, we might want to filter by meeting_date or created_at. Let's stick to created_at for consistency.
+        # But wait, User, Project, Meeting all have created_at. Company also has created_at.
+        
         async with AsyncSessionLocal() as session:
-            users_count = await session.scalar(select(func.count()).select_from(User))
-            projects_count = await session.scalar(select(func.count()).select_from(Project))
-            meetings_count = await session.scalar(select(func.count()).select_from(Meeting))
-            companies_count = await session.scalar(select(func.count()).select_from(Company))
+            # === Global Stats ===
+            users_count = await session.scalar(apply_date_filter(select(func.count()).select_from(User), User))
+            projects_count = await session.scalar(apply_date_filter(select(func.count()).select_from(Project), Project))
+            meetings_count = await session.scalar(apply_date_filter(select(func.count()).select_from(Meeting), Meeting))
+            companies_count = await session.scalar(apply_date_filter(select(func.count()).select_from(Company), Company))
+            
+            total_duration_sec = await session.scalar(apply_date_filter(select(func.sum(Meeting.duration)).select_from(Meeting), Meeting))
+            total_duration_hours = (total_duration_sec or 0) / 3600.0
+
+            # === Grouped Stats (by Company) ===
+            users_by_company = (await session.execute(
+                apply_date_filter(select(Company.name, func.count(User.id)).outerjoin(User, Company.id == User.company_id), User)
+                .group_by(Company.name)
+            )).all()
+
+            projects_by_company = (await session.execute(
+                apply_date_filter(select(Company.name, func.count(Project.id)).outerjoin(Project, Company.id == Project.company_id), Project)
+                .group_by(Company.name)
+            )).all()
+
+            meetings_by_company = (await session.execute(
+                apply_date_filter(select(Company.name, func.count(Meeting.id)).outerjoin(Meeting, Company.id == Meeting.company_id), Meeting)
+                .group_by(Company.name)
+            )).all()
+
+            duration_by_company = (await session.execute(
+                apply_date_filter(select(Company.name, func.sum(Meeting.duration)).outerjoin(Meeting, Company.id == Meeting.company_id), Meeting)
+                .group_by(Company.name)
+            )).all()
 
         context = {
             "request": request,
+            "start_date": start_date_str or "",
+            "end_date": end_date_str or "",
+            # Global
             "users_count": users_count,
             "projects_count": projects_count,
             "meetings_count": meetings_count,
             "companies_count": companies_count,
+            "total_duration_hours": round(total_duration_hours, 1),
+            # Grouped (for charts)
+            "users_by_company": {row[0]: row[1] for row in users_by_company},
+            "projects_by_company": {row[0]: row[1] for row in projects_by_company},
+            "meetings_by_company": {row[0]: row[1] for row in meetings_by_company},
+            "duration_by_company": {row[0]: round(float(row[1] or 0) / 3600.0, 1) for row in duration_by_company},
         }
         return await self.templates.TemplateResponse(request, "admin/analytics.html", context=context)
 

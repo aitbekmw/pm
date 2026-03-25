@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
@@ -49,6 +49,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Custom middleware to fix protocol for SQLAdmin behind proxy
+@app.middleware("http")
+async def fix_protocol_middleware(request: Request, call_next):
+    # Set scheme to https if Host is testmeet.mdigital.kg or X-Forwarded-Proto is https
+    host = request.headers.get("host", "")
+    x_proto = request.headers.get("x-forwarded-proto", "").lower()
+    if host == "testmeet.mdigital.kg" or x_proto == "https":
+        request.scope["scheme"] = "https"
+    return await call_next(request)
 
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
@@ -57,7 +66,7 @@ app.add_middleware(
     secret_key=settings.OAUTH_SESSION_SECRET,
     session_cookie="oauth_session",
     same_site="lax",
-    https_only=True,
+    https_only=False,
 )
 
 # CORS middleware

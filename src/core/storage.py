@@ -3,7 +3,7 @@ from botocore.client import Config
 from botocore.exceptions import ClientError
 from typing import Optional, BinaryIO
 import io
-from datetime import datetime, timedelta
+
 from urllib.parse import quote
 import librosa
 import soundfile as sf
@@ -198,17 +198,27 @@ class S3Storage:
             return False
 
     def generate_direct_url(self, object_name: str) -> Optional[str]:
-        """Генерирует прямую ссылку на файл через S3 endpoint
+        """Генерирует прямую ссылку на файл через S3 endpoint или возвращает имя дефолтной картинки
+        
+        Если object_name содержит '/', то это путь в S3 и генерируется полный URL.
+        Если object_name не содержит '/', то это имя дефолтной картинки (default-blue, default-red, etc.)
+        и оно возвращается как есть для обработки на фронтеде.
         
         Args:
-            object_name: имя объекта в S3
+            object_name: либо путь к файлу в S3 (project_covers/...), либо имя дефолтной картинки (default-blue)
             
         Returns:
-            Полный URL к файлу через S3 endpoint
+            Полный URL к файлу через S3 endpoint или имя дефолтной картинки
         """
         if not object_name:
             return None
         
+        # Если это дефолтная картинка (не содержит '/'), возвращаем как есть
+        if '/' not in object_name:
+            logger.debug(f"Using default cover image: {object_name}")
+            return object_name
+        
+        # Это путь в S3, генерируем полный URL
         # Получаем базовый URL из настроек
         base_url = settings.S3_ENDPOINT_URL.rstrip('/')
         

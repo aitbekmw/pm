@@ -95,6 +95,11 @@ async def create_meeting(
     await db.commit()
     await db.refresh(meeting)
     
+    # Если встреча привязана к проекту, обновляем updated_at проекта
+    if project and project_id:
+        project.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+
     # Отправка уведомлений участникам проекта
     if project_id:
         from src.projects import selectors as project_selectors
@@ -153,6 +158,15 @@ async def update_meeting(
     
     await db.commit()
     await db.refresh(meeting)
+
+    # Если встреча привязана к проекту, обновляем updated_at проекта
+    if meeting.project_id:
+        project_result = await db.execute(select(Project).where(Project.id == meeting.project_id))
+        project = project_result.scalars().first()
+        if project:
+            project.updated_at = datetime.now(timezone.utc)
+            await db.commit()
+
     return meeting
 
 
@@ -204,6 +218,11 @@ async def move_meeting_to_project(
         project = project_result.scalars().first()
         project_name = project.name if project else "Unknown"
 
+        # Обновляем updated_at проекта
+        if project:
+            project.updated_at = datetime.now(timezone.utc)
+            await db.commit()
+
         # Отправляем уведомления всем участникам, кроме организатора
         for access in project_members:
             if access.user_id != meeting.organizer_id:
@@ -254,6 +273,24 @@ async def update_note(
     await db.commit()
     await db.refresh(note)
     return note
+
+
+async def update_transcript(
+    db: AsyncSession,
+    meeting_id: int,
+    content: str
+) -> Optional[Transcript]:
+    """Обновить транскрипт встречи"""
+    result = await db.execute(select(Transcript).where(Transcript.meeting_id == meeting_id))
+    transcript = result.scalars().first()
+    
+    if not transcript:
+        return None
+    
+    transcript.content = content
+    await db.commit()
+    await db.refresh(transcript)
+    return transcript
 
 
 async def delete_note(db: AsyncSession, note_id: int) -> bool:

@@ -30,7 +30,8 @@ async def get_user_projects(
         query = select(Project)
         if not include_archived:
             query = query.where(Project.is_archived == False)
-        result = await db.execute(query.order_by(Project.created_at.desc()))
+        # Сортируем по дате последнего изменения (новые первыми)
+        result = await db.execute(query.order_by(Project.updated_at.desc()))
         return list(result.scalars().all())
     elif user_role == "Manager":
         # Manager видит проекты, где он создатель или куда его добавили (любая запись в ProjectAccess)
@@ -51,7 +52,8 @@ async def get_user_projects(
         )
         if not include_archived:
             query = query.where(Project.is_archived == False)
-        result = await db.execute(query.order_by(Project.created_at.desc()))
+        # Сортируем по дате последнего изменения (новые первыми)
+        result = await db.execute(query.order_by(Project.updated_at.desc()))
         return list(result.scalars().all())
     else:
         # Остальные видят только проекты, куда их добавили
@@ -62,7 +64,8 @@ async def get_user_projects(
         )
         if not include_archived:
             query = query.where(Project.is_archived == False)
-        result = await db.execute(query.order_by(Project.created_at.desc()))
+        # Сортируем по дате последнего изменения (новые первыми)
+        result = await db.execute(query.order_by(Project.updated_at.desc()))
         return list(result.scalars().all())
 
 
@@ -228,7 +231,8 @@ async def search_projects(
         query_obj = select(Project).where(search_filter)
         if not include_archived:
             query_obj = query_obj.where(Project.is_archived == False)
-        result = await db.execute(query_obj.order_by(Project.created_at.desc()))
+        # Сортируем по дате последнего изменения (новые первыми)
+        result = await db.execute(query_obj.order_by(Project.updated_at.desc()))
         return list(result.scalars().all())
     elif user_role == "Manager":
         # Manager видит проекты, где он создатель или куда его добавили (любая запись в ProjectAccess)
@@ -251,7 +255,8 @@ async def search_projects(
         )
         if not include_archived:
             query_obj = query_obj.where(Project.is_archived == False)
-        result = await db.execute(query_obj.order_by(Project.created_at.desc()))
+        # Сортируем по дате последнего изменения (новые первыми)
+        result = await db.execute(query_obj.order_by(Project.updated_at.desc()))
         return list(result.scalars().all())
     else:
         # Остальные видят только проекты, куда их добавили
@@ -267,5 +272,6 @@ async def search_projects(
         )
         if not include_archived:
             query_obj = query_obj.where(Project.is_archived == False)
-        result = await db.execute(query_obj.order_by(Project.created_at.desc()))
+        # Сортируем по дате последнего изменения (новые первыми)
+        result = await db.execute(query_obj.order_by(Project.updated_at.desc()))
         return list(result.scalars().all())

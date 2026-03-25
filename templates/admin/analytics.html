@@ -2,124 +2,444 @@
 
 {% block content %}
 <style>
-.analytics-container {
-    padding: 2rem;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background-color: #f8fafc;
-    min-height: calc(100vh - 60px);
-}
-.analytics-header {
-    margin-bottom: 2rem;
-}
-.analytics-header h1 {
-    font-size: 2rem;
-    font-weight: 700;
-    color: #1e293b;
-    margin: 0;
-}
-.analytics-header p {
-    color: #64748b;
-    margin-top: 0.5rem;
-    font-size: 1.1rem;
-}
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 1.5rem;
-}
-.stat-card {
-    background: #ffffff;
-    border-radius: 12px;
-    padding: 1.5rem;
-    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-    display: flex;
-    align-items: center;
-    transition: transform 0.2s, box-shadow 0.2s;
-    border: 1px solid #e2e8f0;
-}
-.stat-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-}
-.stat-icon {
-    width: 60px;
-    height: 60px;
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.75rem;
-    margin-right: 1.5rem;
-    flex-shrink: 0;
-}
-.icon-users { background: #dbeafe; color: #3b82f6; }
-.icon-projects { background: #dcfce7; color: #22c55e; }
-.icon-meetings { background: #fef3c7; color: #f59e0b; }
-.icon-companies { background: #f3e8ff; color: #a855f7; }
+    /* Modern styling with glassmorphism touches */
+    .analytics-container {
+        padding: 2rem;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background-color: #f8fafc;
+        min-height: calc(100vh - 60px);
+    }
 
-.stat-details h3 {
-    margin: 0;
-    font-size: 0.875rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #64748b;
-    font-weight: 600;
-}
-.stat-details .stat-value {
-    margin: 0.5rem 0 0 0;
-    font-size: 2.25rem;
-    font-weight: 800;
-    color: #0f172a;
-    line-height: 1;
-}
+    .analytics-header {
+        margin-bottom: 2rem;
+    }
+
+    .analytics-header h1 {
+        font-size: 2.25rem;
+        font-weight: 800;
+        color: #0f172a;
+        margin: 0;
+        letter-spacing: -0.025em;
+    }
+
+    .analytics-header p {
+        color: #64748b;
+        margin-top: 0.5rem;
+        font-size: 1.1rem;
+    }
+
+    .date-filter-form {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        background: #ffffff;
+        padding: 1rem;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05);
+        border: 1px solid rgba(226, 232, 240, 0.8);
+        margin-top: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .date-filter-form .form-group {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .date-filter-form label {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: #475569;
+    }
+
+    .date-filter-form input[type="date"] {
+        padding: 0.5rem 0.75rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        font-family: inherit;
+        color: #1e293b;
+        outline: none;
+        transition: border-color 0.2s;
+    }
+
+    .date-filter-form input[type="date"]:focus {
+        border-color: #3b82f6;
+    }
+
+    .date-filter-form button {
+        background-color: #3b82f6;
+        color: white;
+        border: none;
+        padding: 0.5rem 1.25rem;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+
+    .date-filter-form button:hover {
+        background-color: #2563eb;
+    }
+
+    .date-filter-form .reset-btn {
+        background-color: #f1f5f9;
+        color: #475569;
+        text-decoration: none;
+        padding: 0.5rem 1.25rem;
+        border-radius: 8px;
+        font-weight: 600;
+        transition: background-color 0.2s;
+        display: inline-block;
+    }
+
+    .date-filter-form .reset-btn:hover {
+        background-color: #e2e8f0;
+    }
+
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2.5rem;
+    }
+
+    .stat-card {
+        background: #ffffff;
+        border-radius: 16px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+        display: flex;
+        align-items: center;
+        transition: all 0.3s ease;
+        border: 1px solid rgba(226, 232, 240, 0.8);
+    }
+
+    .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+        border-color: #cbd5e1;
+    }
+
+    .stat-icon {
+        width: 60px;
+        height: 60px;
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.75rem;
+        margin-right: 1.25rem;
+        flex-shrink: 0;
+    }
+
+    .icon-users {
+        background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+        color: #2563eb;
+    }
+
+    .icon-projects {
+        background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+        color: #16a34a;
+    }
+
+    .icon-meetings {
+        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+        color: #d97706;
+    }
+
+    .icon-companies {
+        background: linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%);
+        color: #9333ea;
+    }
+
+    .icon-time {
+        background: linear-gradient(135deg, #ffe4e6 0%, #fecdd3 100%);
+        color: #e11d48;
+    }
+
+    .stat-details h3 {
+        margin: 0;
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #64748b;
+        font-weight: 700;
+    }
+
+    .stat-details .stat-value {
+        margin: 0.5rem 0 0 0;
+        font-size: 2.25rem;
+        font-weight: 800;
+        color: #0f172a;
+        line-height: 1;
+    }
+
+    /* Charts Grid */
+    .charts-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+        gap: 2rem;
+    }
+
+    .chart-container {
+        background: #ffffff;
+        border-radius: 16px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05);
+        border: 1px solid rgba(226, 232, 240, 0.8);
+        height: 380px;
+    }
+
+    .chart-container h3 {
+        margin-top: 0;
+        margin-bottom: 1.5rem;
+        font-size: 1.125rem;
+        color: #1e293b;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .chart-container h3 i {
+        color: #64748b;
+    }
+
+    /* Responsive canvas wrapper */
+    .canvas-wrapper {
+        position: relative;
+        height: calc(100% - 3rem);
+        width: 100%;
+    }
+
+    @media (max-width: 1024px) {
+        .charts-grid {
+            grid-template-columns: 1fr;
+        }
+    }
 </style>
 
 <div class="analytics-container">
     <div class="analytics-header">
-        <h1>Общая Аналитика</h1>
-        <p>Ключевые показатели вашей системы в реальном времени</p>
+        <h1>Аналитика Платформы</h1>
+        <p>Глобальная статистика и распределение активности по компаниям</p>
+
+        <form class="date-filter-form" method="GET" action="/admin/analytics">
+            <div class="form-group">
+                <label for="start_date">От:</label>
+                <input type="date" id="start_date" name="start_date" value="{{ start_date }}">
+            </div>
+            <div class="form-group">
+                <label for="end_date">До:</label>
+                <input type="date" id="end_date" name="end_date" value="{{ end_date }}">
+            </div>
+            <button type="submit">Применить</button>
+            {% if start_date or end_date %}
+            <a href="/admin/analytics" class="reset-btn">Сбросить</a>
+            {% endif %}
+        </form>
     </div>
 
+    <!-- Общие показатели -->
     <div class="stats-grid">
         <div class="stat-card">
-            <div class="stat-icon icon-users">
-                <i class="fa-solid fa-users"></i>
-            </div>
+            <div class="stat-icon icon-users"><i class="fa-solid fa-users"></i></div>
             <div class="stat-details">
-                <h3>Пользователи</h3>
+                <h3>Пользователей</h3>
                 <div class="stat-value">{{ users_count }}</div>
             </div>
         </div>
-
         <div class="stat-card">
-            <div class="stat-icon icon-projects">
-                <i class="fa-solid fa-diagram-project"></i>
-            </div>
+            <div class="stat-icon icon-companies"><i class="fa-solid fa-building"></i></div>
             <div class="stat-details">
-                <h3>Проекты</h3>
+                <h3>Компаний</h3>
+                <div class="stat-value">{{ companies_count }}</div>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon icon-projects"><i class="fa-solid fa-diagram-project"></i></div>
+            <div class="stat-details">
+                <h3>Проектов</h3>
                 <div class="stat-value">{{ projects_count }}</div>
             </div>
         </div>
-
         <div class="stat-card">
-            <div class="stat-icon icon-meetings">
-                <i class="fa-solid fa-calendar-days"></i>
-            </div>
+            <div class="stat-icon icon-meetings"><i class="fa-solid fa-calendar-days"></i></div>
             <div class="stat-details">
-                <h3>Встречи</h3>
+                <h3>Всего Встреч</h3>
                 <div class="stat-value">{{ meetings_count }}</div>
             </div>
         </div>
-
         <div class="stat-card">
-            <div class="stat-icon icon-companies">
-                <i class="fa-solid fa-building"></i>
-            </div>
+            <div class="stat-icon icon-time"><i class="fa-solid fa-clock"></i></div>
             <div class="stat-details">
-                <h3>Компании</h3>
-                <div class="stat-value">{{ companies_count }}</div>
+                <h3>Часов Записано</h3>
+                <div class="stat-value">{{ total_duration_hours }}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Графики -->
+    <div class="charts-grid">
+        <div class="chart-container">
+            <h3><i class="fa-solid fa-users"></i> Распределение пользователей</h3>
+            <div class="canvas-wrapper">
+                <canvas id="usersChart"></canvas>
+            </div>
+        </div>
+        <div class="chart-container">
+            <h3><i class="fa-solid fa-calendar-days"></i> Количество встреч</h3>
+            <div class="canvas-wrapper">
+                <canvas id="meetingsChart"></canvas>
+            </div>
+        </div>
+        <div class="chart-container">
+            <h3><i class="fa-solid fa-clock"></i> Время записанных разговоров (Часы)</h3>
+            <div class="canvas-wrapper">
+                <canvas id="durationChart"></canvas>
+            </div>
+        </div>
+        <div class="chart-container">
+            <h3><i class="fa-solid fa-diagram-project"></i> Активные проекты</h3>
+            <div class="canvas-wrapper">
+                <canvas id="projectsChart"></canvas>
             </div>
         </div>
     </div>
 </div>
+
+<!-- Скрипты Chart.js и инициализация -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // Подготовка данных из Backend (FastAPI Jinja Context)
+        const usersData = {{ users_by_company | tojson | safe
+    }};
+    const projectsData = {{ projects_by_company | tojson | safe }};
+    const meetingsData = {{ meetings_by_company | tojson | safe }};
+    const durationData = {{ duration_by_company | tojson | safe }};
+
+    function replaceNullKey(dataObj) {
+        const result = {};
+        for (let key in dataObj) {
+            let label = key === "null" || key === null ? "Без компании" : key;
+            result[label] = dataObj[key];
+        }
+        return result;
+    }
+
+    const uData = replaceNullKey(usersData);
+    const pData = replaceNullKey(projectsData);
+    const mData = replaceNullKey(meetingsData);
+    const dData = replaceNullKey(durationData);
+
+    // Общие настройки Chart.js для красоты
+    Chart.defaults.font.family = "'Inter', sans-serif";
+    Chart.defaults.color = '#64748b';
+    Chart.defaults.scale.grid.color = 'rgba(226, 232, 240, 0.5)';
+
+    // Красивые цвета для компаний
+    const colors = [
+        'rgba(59, 130, 246, 0.8)', // blue
+        'rgba(16, 185, 129, 0.8)', // emerald
+        'rgba(245, 158, 11, 0.8)', // amber
+        'rgba(139, 92, 246, 0.8)', // violet
+        'rgba(236, 72, 153, 0.8)', // pink
+        'rgba(14, 165, 233, 0.8)', // sky
+        'rgba(244, 63, 94, 0.8)'   // rose
+    ];
+
+    // 1. График Пользователей (Doughnut)
+    new Chart(document.getElementById('usersChart'), {
+        type: 'doughnut',
+        data: {
+            labels: Object.keys(uData),
+            datasets: [{
+                data: Object.values(uData),
+                backgroundColor: colors,
+                borderColor: '#ffffff',
+                borderWidth: 2,
+                hoverOffset: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'right' }
+            },
+            cutout: '65%'
+        }
+    });
+
+    // 2. График Встреч (Bar)
+    new Chart(document.getElementById('meetingsChart'), {
+        type: 'bar',
+        data: {
+            labels: Object.keys(mData),
+            datasets: [{
+                label: 'Встречи',
+                data: Object.values(mData),
+                backgroundColor: 'rgba(245, 158, 11, 0.8)',
+                borderColor: 'rgba(245, 158, 11, 1)',
+                borderWidth: 1,
+                borderRadius: 6,
+                barPercentage: 0.6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true } }
+        }
+    });
+
+    // 3. График Времени Встреч (Polar Area)
+    new Chart(document.getElementById('durationChart'), {
+        type: 'polarArea',
+        data: {
+            labels: Object.keys(dData),
+            datasets: [{
+                data: Object.values(dData),
+                backgroundColor: colors,
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'right' },
+                tooltip: { callbacks: { label: function (c) { return c.label + ': ' + c.raw + ' часов'; } } }
+            }
+        }
+    });
+
+    // 4. График Проектов (Bar)
+    new Chart(document.getElementById('projectsChart'), {
+        type: 'bar',
+        data: {
+            labels: Object.keys(pData),
+            datasets: [{
+                label: 'Проекты',
+                data: Object.values(pData),
+                backgroundColor: 'rgba(16, 185, 129, 0.8)',
+                borderColor: 'rgba(16, 185, 129, 1)',
+                borderWidth: 1,
+                borderRadius: 6,
+                barPercentage: 0.6
+            }]
+        },
+        options: {
+            indexAxis: 'y', // Horizontal
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { x: { beginAtZero: true } }
+        }
+    });
+});
+</script>
 {% endblock %}

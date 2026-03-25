@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile, Path, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from datetime import datetime
@@ -8,6 +8,7 @@ from src.users.models import User
 from src.core.permissions import get_current_user, require_manager_or_admin
 from src.projects import schemas, services, selectors
 from src.meetings import schemas as meeting_schemas, selectors as meeting_selectors
+from src.core.storage import storage
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -15,12 +16,121 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 @router.post("/", response_model=schemas.ProjectOut, status_code=status.HTTP_201_CREATED)
 async def create_project(
-    data: schemas.ProjectCreate,
+    name: str = Form(...),
+    description: Optional[str] = Form(None),
+    confluence_data: Optional[str] = Form(None),
+    jira_data: Optional[str] = Form(None),
+    users: Optional[str] = Form(None),
+    cover_name: Optional[str] = Form(None),
+    cover: Optional[UploadFile] = File(None),
     current_user: User = Depends(require_manager_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Создать новый проект (только Manager или Admin)"""
-    project = await services.create_project(db, data, current_user.id)
+    """Создать новый проект (только Manager или Admin)
+    
+    **Параметры:**
+    - name: название проекта (обязательно)
+    - description: описание (опционально)
+    - confluence_data: JSON данные Confluence (опционально)
+    - jira_data: JSON данные Jira (опционально)
+    - users: JSON массив пользователей [{"id": 1, "role": "Manager"}] (опционально)
+    - cover_name: строка с названием дефолтной иконки (default-blue, default-red и т.д.) - опционально
+    - cover: файл обложки JPEG/PNG/GIF/WebP макс. 10MB - опционально
+    
+    **Отправка:**
+    Используйте multipart/form-data
+    """
+    import json
+    
+    # Парсим JSON параметры
+    confluence_data_dict = None
+    if confluence_data:
+        try:
+            confluence_data_dict = json.loads(confluence_data)
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid confluence_data JSON"
+            )
+    
+    jira_data_dict = None
+    if jira_data:
+        try:
+            jira_data_dict = json.loads(jira_data)
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid jira_data JSON"
+            )
+    
+    users_list = None
+    if users:
+        try:
+            users_list = json.loads(users)
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid users JSON"
+            )
+    
+    # Проверяем обложку если она передана (либо как файл, либо как строка дефолтной иконки)
+    cover_bytes = None
+    cover_filename = None
+    cover_default = None
+    
+    if cover:
+        # Загружается как файл
+        cover_bytes = await cover.read()
+        
+        if len(cover_bytes) > 10 * 1024 * 1024:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="File size too large. Maximum size is 10MB"
+            )
+
+        allowed_formats = {'image/jpeg', 'image/png', 'image/gif', 'image/webp'}
+        if cover.content_type not in allowed_formats:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Unsupported file format. Allowed: JPEG, PNG, GIF, WebP"
+            )
+        
+        cover_filename = cover.filename or "cover.jpg"
+    
+    elif cover_name:
+        # Используется дефолтная иконка
+        if '/' in cover_name or '\\' in cover_name or '..' in cover_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid cover name. Must not contain slashes or special sequences"
+            )
+        
+        if not cover_name.replace('-', '').replace('_', '').isalnum():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid cover name. Only letters, numbers, hyphens and underscores allowed"
+            )
+        
+        cover_default = cover_name
+    
+    # Создаем объект ProjectCreate
+    project_data = schemas.ProjectCreate(
+        name=name,
+        description=description,
+        confluence_data=confluence_data_dict,
+        jira_data=jira_data_dict,
+        users=users_list
+    )
+    
+    # Создаем проект с обложкой если она есть
+    project = await services.create_project(
+        db=db, 
+        data=project_data, 
+        user_id=current_user.id,
+        cover_bytes=cover_bytes,
+        cover_filename=cover_filename,
+        cover_default=cover_default
+    )
     
     # Добавить счетчики
     members_count = await selectors.get_project_members_count(db, project.id)
@@ -377,4 +487,187 @@ async def revoke_access(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Access not found"
         )
+
+
+@router.post("/{project_id}/cover", response_model=schemas.ProjectCoverUploadResponse, status_code=status.HTTP_201_CREATED)
+async def upload_project_cover(
+    project_id: int,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Загрузить обложку проекта
+
+    Загружает изображение в качестве обложки проекта в S3.
+    
+    **Требования к файлу:**
+    - Форматы: JPEG, PNG, GIF, WebP
+    - Максимальный размер: 10MB
+    
+    **Права доступа:** Только Admin или Manager владелец проекта
+    
+    **Результат:** Файл сохраняется в папке project_covers/{project_name}_{project_id}/ с уникальным UUID именем
+    
+    **Ответы:**
+    - 201: Обложка успешно загружена
+    - 403: Нет прав на загрузку обложки
+    - 404: Проект не найден
+    - 413: Размер файла превышает 10MB
+    - 415: Неподдерживаемый формат файла
+    - 500: Ошибка при загрузке
+    """
+    # Проверить права на редактирование
+    can_edit = await selectors.check_user_can_edit_project(db, current_user.id, current_user.role, project_id)
+    if not can_edit:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Only Admin or Manager project owner can upload cover"
+        )
+
+    # Проверить существует ли проект
+    project = await selectors.get_project_by_id(db, project_id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+
+    # Проверить размер файла (максимум 10MB)
+    file_bytes = await file.read()
+    if len(file_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File size too large. Maximum size is 10MB"
+        )
+
+    # Проверить формат файла
+    allowed_formats = {'image/jpeg', 'image/png', 'image/gif', 'image/webp'}
+    if file.content_type not in allowed_formats:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported file format. Allowed: JPEG, PNG, GIF, WebP"
+        )
+
+    # Загрузить обложку
+    updated_project = await services.upload_project_cover(
+        db, project_id, file_bytes, file.filename or "cover.jpg"
+    )
+
+    if not updated_project:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to upload cover"
+        )
+
+    return schemas.ProjectCoverUploadResponse(
+        id=updated_project.id,
+        cover=updated_project.cover,
+        message="Cover uploaded successfully"
+    )
+
+
+@router.delete("/{project_id}/cover", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_project_cover(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Удалить обложку проекта
+
+    Удаляет обложку проекта из S3 и очищает поле cover в БД.
+    
+    **Права доступа:** Только Admin или Manager владелец проекта
+    
+    **Результат:** Файл удаляется из хранилища, проект остается без обложки
+    
+    **Ответы:**
+    - 204: Обложка успешно удалена
+    - 403: Нет прав на удаление обложки
+    - 404: Проект не найден
+    """
+    # Проверить права на редактирование
+    can_edit = await selectors.check_user_can_edit_project(db, current_user.id, current_user.role, project_id)
+    if not can_edit:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Only Admin or Manager project owner can delete cover"
+        )
+
+    # Проверить существует ли проект
+    project = await selectors.get_project_by_id(db, project_id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+
+    # Удалить обложку
+    await services.delete_project_cover(db, project_id)
+
+
+@router.get("/{project_id}/cover-url", response_model=schemas.ProjectCoverUrlResponse)
+async def get_project_cover_url(
+    project_id: int = Path(..., description="ID проекта"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Получить presigned URL обложки проекта
+
+    Возвращает временную подписанную ссылку на обложку проекта.
+    
+    **Характеристики URL:**
+    - Действительна: 1 час (3600 секунд)
+    - Автентификация: Не требуется
+    - Скачивание: Возможно напрямую без авторизации
+    
+    **Использование:**
+    - Используйте URL для загрузки изображения с фронтенда
+    - Не требует дополнительной аутентификации
+    - При истечении срока нужно запросить новый URL
+    
+    **Ответы:**
+    - 200: URL успешно получена
+    - 403: Нет доступа к проекту
+    - 404: Проект не найден или обложка не загружена
+    - 500: Ошибка при генерации URL
+    """
+    # Проверить существует ли проект
+    project = await selectors.get_project_by_id(db, project_id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+
+    # Проверить доступ пользователя к проекту
+    has_access = await selectors.check_user_has_project_access(
+        db, current_user.id, current_user.role, project_id
+    )
+    if not has_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied to this project"
+        )
+
+    # Проверить существует ли обложка
+    if not project.cover:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project cover not found"
+        )
+
+    # Генерируем presigned URL (действителен 1 час)
+    cover_url = storage.generate_presigned_url(project.cover, expiration=3600)
+
+    if not cover_url:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate cover URL"
+        )
+
+    return schemas.ProjectCoverUrlResponse(
+        id=project.id,
+        cover_url=cover_url
+    )
+
 

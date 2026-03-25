@@ -1,6 +1,6 @@
 from sqlalchemy import String, Integer, Boolean, DateTime, func, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, List
 
 if TYPE_CHECKING:
     from src.companies.models import Company
@@ -38,6 +38,9 @@ class User(Base):
     projects: Mapped[list["Project"]] = relationship(
         "Project", secondary="project_access", back_populates="users", lazy="selectin"
     )
+    push_tokens: Mapped[List["PushToken"]] = relationship(
+        "PushToken", back_populates="user", lazy="select", cascade="all, delete-orphan"
+    )
 
 
 class Session(Base):
@@ -48,3 +51,16 @@ class Session(Base):
     user_id: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     expires_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PushToken(Base):
+    __tablename__ = "push_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    device_type: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)  # 'ios' | 'android'
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    user: Mapped["User"] = relationship("User", back_populates="push_tokens")
+

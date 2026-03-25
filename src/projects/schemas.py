@@ -1,6 +1,7 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 from typing import Optional
 from datetime import datetime
+from src.core.storage import storage
 
 
 class ProjectBase(BaseModel):
@@ -25,10 +26,12 @@ class ProjectUpdate(BaseModel):
     description: Optional[str] = None
     confluence_data: Optional[dict] = None
     jira_data: Optional[dict] = None
+    cover: Optional[str] = None
 
 
 class ProjectOut(ProjectBase):
     id: int
+    cover: Optional[str] = None
     is_archived: bool
     created_by: Optional[int]
     created_at: Optional[datetime]
@@ -38,6 +41,13 @@ class ProjectOut(ProjectBase):
 
     class Config:
         from_attributes = True
+    
+    @field_serializer('cover')
+    def serialize_cover(self, value: Optional[str], _info):
+        """Генерирует прямую ссылку на обложку проекта """
+        if value:
+            return storage.generate_direct_url(value)
+        return None
 
 
 class ProjectAccessBase(BaseModel):
@@ -90,6 +100,7 @@ class ProjectListOut(BaseModel):
     id: int
     name: str
     description: Optional[str]
+    cover: Optional[str] = None
     is_archived: bool
     members_count: Optional[int] = 0
     meetings_count: Optional[int] = 0
@@ -97,4 +108,38 @@ class ProjectListOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+    @field_serializer('cover')
+    def serialize_cover(self, value: Optional[str], _info):
+        """Генерирует прямую ссылку на обложку проекта """
+        if value:
+            return storage.generate_direct_url(value)
+        return None
+
+
+class ProjectCoverUploadResponse(BaseModel):
+    """Ответ при загрузке обложки"""
+    id: int
+    cover: Optional[str]
+    message: str
+
+    class Config:
+        from_attributes = True
+    
+    @field_serializer('cover')
+    def serialize_cover(self, value: Optional[str], _info):
+        """Генерирует прямую ссылку на обложку проекта """
+        if value:
+            return storage.generate_direct_url(value)
+        return None
+
+
+class ProjectCoverUrlResponse(BaseModel):
+    """Ответ с URL обложки проекта"""
+    id: int
+    cover_url: Optional[str]
+
+    class Config:
+        from_attributes = True
+
 

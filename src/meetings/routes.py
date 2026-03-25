@@ -7,7 +7,7 @@ import logging
 from src.db.deps import get_db
 from src.users.models import User
 from src.core.permissions import get_current_user
-from src.meetings import schemas, services, selectors
+from src.meetings import schemas, services, selectors, dependencies as meeting_deps
 from src.projects import selectors as project_selectors
 from src.core.queue import enqueue_meeting_processing, enqueue_meeting_processing_from_subtitle
 
@@ -90,8 +90,8 @@ async def get_my_meetings(
     q: Optional[str] = Query(None, min_length=1, description="Поиск по названию встречи"),
     start_date: Optional[datetime] = Query(None, description="Начало периода (ISO 8601)"),
     end_date: Optional[datetime] = Query(None, description="Конец периода (ISO 8601)"),
-    min_duration: Optional[float] = Query(None, ge=0, description="Минимальная длительность в минутах"),
-    max_duration: Optional[float] = Query(None, ge=0, description="Максимальная длительность в минутах"),
+    duration_from: Optional[int] = Query(None, ge=0, description="Минимальная длительность в секундах (или null если нет нижней границы)"),
+    duration_to: Optional[int] = Query(None, ge=0, description="Максимальная длительность в секундах (или null если нет верхней границы)"),
     sort_date: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по дате"),
     sort_duration: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по длительности"),
     sort_importance: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по важности"),
@@ -108,7 +108,7 @@ async def get_my_meetings(
     Фильтрация:
     - q: поиск по названию
     - start_date / end_date: диапазон дат (ISO 8601)
-    - min_duration / max_duration: диапазон длительности в минутах
+    - duration_from / duration_to: диапазон длительности в секундах (null если нет границы)
 
     Сортировка (можно комбинировать):
     - sort_date=asc|desc
@@ -140,8 +140,8 @@ async def get_my_meetings(
         organizer_id=current_user.id,   # ← только мои встречи
         start_date=start_date,
         end_date=end_date,
-        min_duration=min_duration,
-        max_duration=max_duration,
+        duration_from=duration_from,
+        duration_to=duration_to,
         sort_by=sort_by,
         skip=skip,
         limit=limit,
@@ -163,10 +163,10 @@ async def get_meetings(
         organizer_id: Optional[int] = Query(None),
         start_date: Optional[datetime] = Query(None),
         end_date: Optional[datetime] = Query(None),
-        min_duration: Optional[float] = Query(None, ge=0,
-                                              description="Минимальная длительность в минутах (поддерживаются decimals, e.g. 0.5)"),
-        max_duration: Optional[float] = Query(None, ge=0,
-                                              description="Максимальная длительность в минутах (поддерживаются decimals, e.g. 0.5)"),
+        duration_from: Optional[int] = Query(None, ge=0,
+                                              description="Минимальная длительность в секундах (или null если нет нижней границы)"),
+        duration_to: Optional[int] = Query(None, ge=0,
+                                              description="Максимальная длительность в секундах (или null если нет верхней границы)"),
         sort_date: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по дате"),
         sort_duration: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по длительности"),
         sort_importance: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по важности"),
@@ -184,7 +184,7 @@ async def get_meetings(
     - organizer_id: ID организатора встречи
     - start_date: начало периода (ISO 8601 формат)
     - end_date: конец периода (ISO 8601 формат)
-    - min_duration / max_duration: диапазон длительности в минутах (поддерживаются decimals)
+    - duration_from / duration_to: диапазон длительности в секундах (null если нет границы)
 
     Сортировка (несколько полей одновременно):
     - sort_date=asc|desc: сортировка по дате
@@ -228,8 +228,8 @@ async def get_meetings(
             organizer_id=organizer_id,
             start_date=start_date,
             end_date=end_date,
-            min_duration=min_duration,
-            max_duration=max_duration,
+            duration_from=duration_from,
+            duration_to=duration_to,
             sort_by=sort_by,
             skip=skip,
             limit=limit,
@@ -245,8 +245,8 @@ async def get_meetings(
             organizer_id=organizer_id,
             start_date=start_date,
             end_date=end_date,
-            min_duration=min_duration,
-            max_duration=max_duration,
+            duration_from=duration_from,
+            duration_to=duration_to,
             sort_by=sort_by,
             skip=skip,
             limit=limit,
@@ -455,40 +455,11 @@ async def get_active_meeting_details(
 
 @router.get("/{meeting_id}", response_model=schemas.MeetingDetailsOut)
 async def get_meeting(
-    meeting_id: int,
-    current_user: User = Depends(get_current_user),
+    meeting: selectors.Meeting = Depends(meeting_deps.get_meeting_with_read_access),
     db: AsyncSession = Depends(get_db)
 ):
     """Получить детали встречи"""
-    meeting = await selectors.get_meeting_by_id(db, meeting_id)
-    if not meeting:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Meeting not found"
-        )
-    
-    # Проверить доступ
-    if meeting.project_id:
-        # Admin видит все встречи
-        if current_user.role == "Admin":
-            pass  # Доступ разрешен
-        else:
-            has_access = await project_selectors.check_user_has_project_access(
-                db, current_user.id, current_user.role, meeting.project_id
-            )
-            if not has_access and meeting.organizer_id != current_user.id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied to this meeting"
-                )
-    elif meeting.organizer_id != current_user.id:
-        # Если встреча не в проекте, только организатор или Admin может видеть
-        if current_user.role != "Admin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied to this meeting"
-            )
-    
+    meeting_id = meeting.id
     # Получить связанные данные
     transcript = await selectors.get_meeting_transcript(db, meeting_id)
     summary = await selectors.get_meeting_summary(db, meeting_id)
@@ -512,116 +483,50 @@ async def get_meeting(
 async def update_meeting(
     meeting_id: int,
     data: schemas.MeetingUpdate,
-    current_user: User = Depends(get_current_user),
+    meeting: selectors.Meeting = Depends(meeting_deps.get_meeting_with_edit_access),
     db: AsyncSession = Depends(get_db)
 ):
     """Обновить встречу"""
-    meeting = await selectors.get_meeting_by_id(db, meeting_id)
-    if not meeting:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Meeting not found"
-        )
-    
-    # Только организатор, Admin или Manager владелец проекта может изменять
-    if meeting.organizer_id == current_user.id:
-        pass  # Организатор может изменять
-    elif current_user.role == "Admin":
-        pass  # Admin может изменять все встречи
-    elif meeting.project_id and current_user.role == "Manager":
-        # Manager может изменять встречи своих проектов
-        can_edit = await project_selectors.check_user_can_edit_project(
-            db, current_user.id, current_user.role, meeting.project_id
-        )
-        if not can_edit:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only organizer, Admin or Manager project owner can update meeting"
-            )
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only organizer, Admin or Manager project owner can update meeting"
-        )
-    
     updated_meeting = await services.update_meeting(db, meeting_id, data)
     return updated_meeting
 
 
+@router.put("/{meeting_id}/transcript", response_model=schemas.TranscriptOut)
+async def update_meeting_transcript(
+    meeting_id: int,
+    data: schemas.TranscriptUpdate,
+    meeting: selectors.Meeting = Depends(meeting_deps.get_meeting_with_edit_access),
+    db: AsyncSession = Depends(get_db)
+):
+    """Обновить транскрипт встречи"""
+    transcript = await services.update_transcript(db, meeting_id, data.content)
+    if not transcript:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transcript not found for this meeting"
+        )
+        
+    return transcript
+
+
 @router.delete("/{meeting_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_meeting(
-    meeting_id: int,
-    current_user: User = Depends(get_current_user),
+    meeting: selectors.Meeting = Depends(meeting_deps.get_meeting_with_edit_access),
     db: AsyncSession = Depends(get_db)
 ):
     """Удалить встречу"""
-    meeting = await selectors.get_meeting_by_id(db, meeting_id)
-    if not meeting:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Meeting not found"
-        )
-    
-    # Только организатор, Admin или Manager владелец проекта может удалять
-    if meeting.organizer_id == current_user.id:
-        pass  # Организатор может удалять
-    elif current_user.role == "Admin":
-        pass  # Admin может удалять все встречи
-    elif meeting.project_id and current_user.role == "Manager":
-        # Manager может удалять встречи своих проектов
-        can_edit = await project_selectors.check_user_can_edit_project(
-            db, current_user.id, current_user.role, meeting.project_id
-        )
-        if not can_edit:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only organizer, Admin or Manager project owner can delete meeting"
-            )
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only organizer, Admin or Manager project owner can delete meeting"
-        )
-    
-    await services.delete_meeting(db, meeting_id)
+    await services.delete_meeting(db, meeting.id)
 
 
 @router.post("/{meeting_id}/move", response_model=schemas.MeetingOut)
 async def move_meeting(
     meeting_id: int,
     project_id: Optional[int] = None,
+    meeting: selectors.Meeting = Depends(meeting_deps.get_meeting_with_edit_access),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Переместить встречу в другой проект"""
-    meeting = await selectors.get_meeting_by_id(db, meeting_id)
-    if not meeting:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Meeting not found"
-        )
-    
-    # Только организатор, Admin или Manager владелец проекта может перемещать
-    if meeting.organizer_id == current_user.id:
-        pass  # Организатор может перемещать
-    elif current_user.role == "Admin":
-        pass  # Admin может перемещать все встречи
-    elif meeting.project_id and current_user.role == "Manager":
-        # Manager может перемещать встречи своих проектов
-        can_edit = await project_selectors.check_user_can_edit_project(
-            db, current_user.id, current_user.role, meeting.project_id
-        )
-        if not can_edit:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only organizer, Admin or Manager project owner can move meeting"
-            )
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only organizer, Admin or Manager project owner can move meeting"
-        )
-    
     # Проверить доступ к новому проекту
     if project_id:
         has_access = await project_selectors.check_user_has_project_access(
@@ -640,45 +545,10 @@ async def move_meeting(
 @router.get("/{meeting_id}/audio-url")
 async def get_audio_url(
     meeting_id: int,
-    current_user: User = Depends(get_current_user),
+    meeting: selectors.Meeting = Depends(meeting_deps.get_meeting_with_read_access),
     db: AsyncSession = Depends(get_db)
 ):
-    """Получить временные ссылки для скачивания аудио
-    
-    Возвращает:
-    - url: ссылка для воспроизведения (Content-Type: audio/wav)
-    - download_url: ссылка для скачивания с Content-Disposition: attachment
-    - expires_in: время жизни ссылок в секундах
-    
-    Пример ответа:
-    {
-      "url": "https://s3.amazonaws.com/bucket/meetings/uuid.wav?X-Amz-Expires=3600&...",
-      "download_url": "https://s3.amazonaws.com/bucket/meetings/uuid.wav?response-content-disposition=attachment&...",
-      "expires_in": 3600
-    }
-    """
-    meeting = await selectors.get_meeting_by_id(db, meeting_id)
-    if not meeting:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Meeting not found"
-        )
-    
-    # Проверить доступ
-    if meeting.project_id:
-        has_access = await project_selectors.check_user_has_project_access(
-            db, current_user.id, current_user.role, meeting.project_id
-        )
-        if not has_access and meeting.organizer_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied"
-            )
-    elif meeting.organizer_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
+    """Получить временные ссылки для скачивания аудио"""
     
     # Получить обе ссылки
     url = await services.get_audio_download_url(db, meeting_id, as_attachment=False)

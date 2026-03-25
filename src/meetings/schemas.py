@@ -211,6 +211,10 @@ class TranscriptOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class TranscriptUpdate(BaseModel):
+    content: str
+
+
 class SummaryOut(BaseModel):
     id: int
     meeting_id: int

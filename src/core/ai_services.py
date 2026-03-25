@@ -291,5 +291,102 @@ class AIService:
             logger.error(f"Error extracting action items: {e}", exc_info=True)
             return []
 
+    async def format_transcript(self, transcript_text: str) -> Optional[str]:
+        """Форматирование транскрипта в Markdown с подсветкой непонятных слов"""
+        try:
+            if not transcript_text or not transcript_text.strip():
+                logger.warning("transcript_text is empty for formatting")
+                return transcript_text
+
+            prompt = f"""Ниже приведен текст транскрипта встречи, распознанный через Whisper. 
+Встреча может проходить на русском, кыргызском или английском языках (или их смеси).
+
+ТВОЯ ЗАДАЧА:
+1. Оформи текст в читаемый Markdown (используй заголовки, списки и абзацы для структурирования).
+2. СОХРАНЯЙ ОРИГИНАЛЬНЫЙ ЯЗЫК каждой фразы. Не переводи текст.
+3. ЕСЛИ фрагмент текста кажется тебе ошибочно распознанным, бессмысленным или является явной галлюцинацией (например, повторяющиеся фразы или странные термины, не подходящие по смыслу), ОБЯЗАТЕЛЬНО оберни его в HTML тег: <span style="color: red;" class="unclear-word">непонятное слово или фраза</span>.
+4. Важно: выделяй только те места, где ты действительно сомневаешься в правильности распознавания.
+5. Не удаляй слова из исходного текста, только добавляй оформление.
+
+Транскрипт:
+{transcript_text}"""
+
+            system_instruction = "Ты - эксперт по редактированию и структурированию транскриптов встреч на разных языках (RU, KY, EN). Твоя цель - сделать текст максимально читаемым и выделить сомнительные фрагменты транскрибации красным цветом."
+            
+            model_with_instruction = genai.GenerativeModel(
+                model_name=settings.GEMINI_MODEL,
+                system_instruction=system_instruction
+            )
+            
+            response = model_with_instruction.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.3, # Меньше креативности, больше точности к исходному тексту
+                    max_output_tokens=4000,
+                )
+            )
+
+            result = response.text
+            logger.info(f"Transcript formatting completed, length: {len(result) if result else 0}")
+            return result
+
+        except Exception as e:
+            logger.error(f"Error formatting transcript: {e}", exc_info=True)
+            # В случае ошибки возвращаем хотя бы исходный текст
+            return transcript_text
+
+    async def format_segments(self, segments: list[dict]) -> list[dict]:
+        """Форматирует отдельные сегменты транскрипта, добавляя теги для непонятных слов"""
+        if not segments:
+            return []
+            
+        try:
+            # Превращаем список сегментов в JSON-строку для обработки
+            # Оставляем только ID и текст, чтобы сэкономить токены и не запутать модель
+            segments_to_process = [{"id": s.get("id"), "text": s.get("text")} for s in segments]
+            
+            prompt = f"""Ниже приведен список сегментов транскрипта встречи (RU, KY, EN).
+Для каждого сегмента проанализируй текст. Если в нем есть ошибки распознавания или галлюцинации, оберни их в тег: <span style="color: red;" class="unclear-word">непонятное слово</span>.
+
+Верни ТОЛЬКО JSON массив объектов с тем же количеством элементов и ID:
+[
+  {{"id": 0, "text": "обработанный текст"}},
+  ...
+]
+
+Сегменты:
+{json.dumps(segments_to_process, ensure_ascii=False)}"""
+
+            system_instruction = "Ты - ассистент по проверке качества транскрибации. Твоя задача - найти и выделить ошибки в тексте сегментов, вернув JSON результат."
+            
+            model_with_instruction = genai.GenerativeModel(
+                model_name=settings.GEMINI_MODEL,
+                system_instruction=system_instruction
+            )
+            
+            response = model_with_instruction.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.1,
+                    max_output_tokens=4000,
+                    response_mime_type="application/json",
+                )
+            )
+
+            processed_segments = json.loads(response.text)
+            
+            # Обновляем оригинальные сегменты
+            mapping = {s["id"]: s["text"] for s in processed_segments if "id" in s and "text" in s}
+            
+            for segment in segments:
+                seg_id = segment.get("id")
+                if seg_id in mapping:
+                    segment["text"] = mapping[seg_id]
+                    
+            return segments
+
+        except Exception as e:
+            logger.error(f"Error formatting segments: {e}", exc_info=True)
+            return segments
 
 ai_service = AIService()
