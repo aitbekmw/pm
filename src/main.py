@@ -50,15 +50,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Custom middleware to fix protocol for SQLAdmin behind proxy
-@app.middleware("http")
-async def fix_protocol_middleware(request: Request, call_next):
-    # Set scheme to https if Host is testmeet.mdigital.kg or X-Forwarded-Proto is https
-    host = request.headers.get("host", "")
-    x_proto = request.headers.get("x-forwarded-proto", "").lower()
-    if host == "testmeet.mdigital.kg" or x_proto == "https":
-        request.scope["scheme"] = "https"
-    return await call_next(request)
+
 
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
