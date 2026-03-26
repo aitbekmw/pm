@@ -16,6 +16,7 @@ from src.projects.routes import router as projects_router
 from src.meetings.routes import router as meetings_router
 from src.notifications.routes import router as notifications_router
 from src.companies.routes import router as companies_router
+from src.faq.routes import router as faq_router
 from src.companies.services import seed_default_companies
 from src.db.session import AsyncSessionLocal
 
@@ -92,6 +93,7 @@ app.include_router(projects_router, prefix=settings.api_prefix)
 app.include_router(meetings_router, prefix=settings.api_prefix)
 app.include_router(notifications_router, prefix=settings.api_prefix)
 app.include_router(companies_router, prefix=settings.api_prefix)
+app.include_router(faq_router, prefix=settings.api_prefix)
 
 @app.get("/")
 async def root():
