@@ -28,6 +28,7 @@ FROM python:3.13.2-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 ca-certificates \
     libmagic1 \
+    ffmpeg \
     postgresql-client \
     redis-tools \
     && apt-get clean && rm -rf /var/lib/apt/lists/*

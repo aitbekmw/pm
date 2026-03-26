@@ -32,6 +32,7 @@ class Meeting(Base):
     importance: Mapped[str] = mapped_column(String, default="low", nullable=False)  # low | middle | high
     audio_file_path: Mapped[str | None] = mapped_column(String, nullable=True)
     audio_file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    audio_content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     pdf_file_path: Mapped[str | None] = mapped_column(String, nullable=True)
     comments: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -59,6 +59,7 @@ class MeetingOut(BaseModel):
     importance: str
     audio_file_path: Optional[str]
     audio_file_size: Optional[int]
+    audio_content_type: Optional[str] = None
     pdf_file_path: Optional[str] = None
     comments: Optional[str]
     created_at: Optional[datetime]
@@ -96,9 +97,11 @@ class MeetingOut(BaseModel):
     
     @field_serializer('audio_file_path')
     def serialize_audio_file_path(self, value: Optional[str], _info):
-        """Генерирует временную ссылку на аудиофайл через s3 напрямую, указывая верный Content-Type"""
+        """Генерирует временную ссылку на аудиофайл через s3, указывая верный Content-Type"""
         if value:
-            return storage.generate_presigned_url(value)
+            # Fix №5 — передаём кешированный content_type из DB
+            content_type = getattr(self, 'audio_content_type', None)
+            return storage.generate_presigned_url(value, content_type=content_type)
         return None
     
     @field_serializer('pdf_file_path')

@@ -221,7 +221,7 @@ async def process_meeting(ctx, meeting_id: int):
             pdf_path = f"meetings/{uuid.uuid4()}.pdf"
             pdf_buffer.seek(0)  # Вернуться в начало буфера
             pdf_file_obj = io.BytesIO(pdf_buffer.read())
-            pdf_s3_path = storage.upload_file(pdf_file_obj, pdf_path, content_type="application/pdf")
+            pdf_s3_path, _ = storage.upload_file(pdf_file_obj, pdf_path, content_type="application/pdf")
             
             if pdf_s3_path:
                 meeting.pdf_file_path = pdf_s3_path
@@ -392,7 +392,7 @@ async def process_meeting_from_subtitle(ctx, meeting_id: int):
             pdf_path = f"meetings/{uuid.uuid4()}.pdf"
             pdf_buffer.seek(0)
             pdf_file_obj = io.BytesIO(pdf_buffer.read())
-            pdf_s3_path = storage.upload_file(pdf_file_obj, pdf_path, content_type="application/pdf")
+            pdf_s3_path, _ = storage.upload_file(pdf_file_obj, pdf_path, content_type="application/pdf")
 
             if pdf_s3_path:
                 meeting.pdf_file_path = pdf_s3_path

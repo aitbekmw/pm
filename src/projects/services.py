@@ -256,7 +256,7 @@ async def upload_project_cover(
 
     # Удалить старую обложку если существует
     if project.cover:
-        storage.delete_file(project.cover)
+        await storage.async_delete_file(project.cover)
 
     # Генерируем уникальное имя для файла
     file_ext = original_filename.rsplit('.', 1)[-1] if '.' in original_filename else 'jpg'
@@ -278,7 +278,7 @@ async def upload_project_cover(
 
     # Загружаем файл
     file_obj = io.BytesIO(file_bytes)
-    uploaded_path = storage.upload_file(file_obj, object_name, content_type=content_type)
+    uploaded_path, _ = await storage.async_upload_file(file_obj, object_name, content_type=content_type)
 
     if not uploaded_path:
         return None
@@ -308,7 +308,7 @@ async def delete_project_cover(db: AsyncSession, project_id: int) -> Optional[Pr
 
     # Удалить файл из S3 если существует и это не дефолтная обложка
     if project.cover and '/' in project.cover:
-        storage.delete_file(project.cover)
+        await storage.async_delete_file(project.cover)
     
     project.cover = None
     await db.commit()

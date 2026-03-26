@@ -27,6 +27,7 @@ async def create_meeting(
     # Генерировать уникальное имя файла для S3
     audio_path = None
     audio_size = None
+    audio_content_type = None
     duration_seconds = None
     user = None  # Initialize user variable
     project = None  # Initialize project variable
@@ -40,15 +41,15 @@ async def create_meeting(
         audio_size = audio_file.tell()  # Получить размер
         audio_file.seek(0)  # Вернуться в начало
         
-        # Получить длительность аудио
+        # Получить длительность аудио и content type
         audio_bytes = audio_file.read()
         audio_duration_seconds = storage.get_audio_duration(audio_bytes)
         if audio_duration_seconds:
             duration_seconds = audio_duration_seconds
         
-        # Вернуться в начало для загрузки
+        # Upload через async wrapper (Fix №2)
         audio_file = io.BytesIO(audio_bytes)
-        final_audio_path = storage.upload_file(audio_file, audio_path)
+        final_audio_path, audio_content_type = await storage.async_upload_file(audio_file, audio_path)
         if final_audio_path:
             audio_path = final_audio_path
     
@@ -88,7 +89,8 @@ async def create_meeting(
         comments=data.comments,
         notes=data.notes,
         audio_file_path=audio_path,
-        audio_file_size=audio_size
+        audio_file_size=audio_size,
+        audio_content_type=audio_content_type if audio_file else None,
     )
     
     db.add(meeting)
@@ -178,7 +180,7 @@ async def delete_meeting(db: AsyncSession, meeting_id: int) -> bool:
     
     # Удалить аудио из S3
     if meeting.audio_file_path:
-        storage.delete_file(meeting.audio_file_path)
+        await storage.async_delete_file(meeting.audio_file_path)
     
     await db.delete(meeting)
     await db.commit()
