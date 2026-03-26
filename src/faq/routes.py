@@ -9,16 +9,28 @@ from src.faq import schemas, services
 
 router = APIRouter(prefix="/faq", tags=["faq"])
 
-@router.get("/", response_model=List[schemas.FAQOut])
+@router.get("/", response_model=List[schemas.FAQCategoryOut])
 async def get_faqs(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Получить все активные FAQ. Доступно всем авторизованным пользователям.
+    Получить все активные FAQ, сгруппированные по категориям. Доступно всем авторизованным пользователям.
     """
-    faqs = await services.get_faqs(db, include_inactive=False)
-    return faqs
+    categories = await services.get_faq_categories(db, include_inactive=False)
+    
+    result = []
+    for cat in categories:
+        result.append({
+            "id": cat.id,
+            "name": cat.name,
+            "order": cat.order,
+            "is_active": cat.is_active,
+            "created_at": cat.created_at,
+            "updated_at": cat.updated_at,
+            "items": cat.faqs
+        })
+    return result
 
 # Если управление происходит через SQLAdmin, дополнительные (POST/PUT/DELETE) эндпоинты 
 # для API можно опустить или добавить с проверкой прав, как показано ниже.

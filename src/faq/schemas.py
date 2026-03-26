@@ -1,8 +1,9 @@
 from pydantic import BaseModel, ConfigDict
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 class FAQBase(BaseModel):
+    category_id: Optional[int] = None
     question: str
     answer: str
     order: Optional[int] = 0
@@ -12,6 +13,7 @@ class FAQCreate(FAQBase):
     pass
 
 class FAQUpdate(BaseModel):
+    category_id: Optional[int] = None
     question: Optional[str] = None
     answer: Optional[str] = None
     order: Optional[int] = None
@@ -19,6 +21,19 @@ class FAQUpdate(BaseModel):
 
 class FAQOut(FAQBase):
     id: int
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
+
+    model_config = ConfigDict(from_attributes=True)
+
+class FAQCategoryBase(BaseModel):
+    name: str
+    order: Optional[int] = 0
+    is_active: Optional[bool] = True
+
+class FAQCategoryOut(FAQCategoryBase):
+    id: int
+    items: List[FAQOut] = []
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
 
