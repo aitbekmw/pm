@@ -16,13 +16,7 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 @router.post("/", response_model=schemas.ProjectOut, status_code=status.HTTP_201_CREATED)
 async def create_project(
-    name: str = Form(...),
-    description: Optional[str] = Form(None),
-    confluence_data: Optional[str] = Form(None),
-    jira_data: Optional[str] = Form(None),
-    users: Optional[str] = Form(None),
-    cover_name: Optional[str] = Form(None),
-    cover: Optional[UploadFile] = File(None),
+    data: schemas.ProjectCreate,
     current_user: User = Depends(require_manager_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -35,101 +29,30 @@ async def create_project(
     - jira_data: JSON данные Jira (опционально)
     - users: JSON массив пользователей [{"id": 1, "role": "Manager"}] (опционально)
     - cover_name: строка с названием дефолтной иконки (default-blue, default-red и т.д.) - опционально
-    - cover: файл обложки JPEG/PNG/GIF/WebP макс. 10MB - опционально
     
     **Отправка:**
-    Используйте multipart/form-data
+    Используйте application/json
     """
-    import json
-    
-    # Парсим JSON параметры
-    confluence_data_dict = None
-    if confluence_data:
-        try:
-            confluence_data_dict = json.loads(confluence_data)
-        except json.JSONDecodeError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid confluence_data JSON"
-            )
-    
-    jira_data_dict = None
-    if jira_data:
-        try:
-            jira_data_dict = json.loads(jira_data)
-        except json.JSONDecodeError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid jira_data JSON"
-            )
-    
-    users_list = None
-    if users:
-        try:
-            users_list = json.loads(users)
-        except json.JSONDecodeError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid users JSON"
-            )
-    
-    # Проверяем обложку если она передана (либо как файл, либо как строка дефолтной иконки)
-    cover_bytes = None
-    cover_filename = None
-    cover_default = None
-    
-    if cover:
-        # Загружается как файл
-        cover_bytes = await cover.read()
-        
-        if len(cover_bytes) > 10 * 1024 * 1024:
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail="File size too large. Maximum size is 10MB"
-            )
-
-        allowed_formats = {'image/jpeg', 'image/png', 'image/gif', 'image/webp'}
-        if cover.content_type not in allowed_formats:
-            raise HTTPException(
-                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail="Unsupported file format. Allowed: JPEG, PNG, GIF, WebP"
-            )
-        
-        cover_filename = cover.filename or "cover.jpg"
-    
-    elif cover_name:
+    if data.cover_name:
         # Используется дефолтная иконка
-        if '/' in cover_name or '\\' in cover_name or '..' in cover_name:
+        if '/' in data.cover_name or '\\' in data.cover_name or '..' in data.cover_name:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid cover name. Must not contain slashes or special sequences"
             )
         
-        if not cover_name.replace('-', '').replace('_', '').isalnum():
+        if not data.cover_name.replace('-', '').replace('_', '').isalnum():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid cover name. Only letters, numbers, hyphens and underscores allowed"
             )
-        
-        cover_default = cover_name
-    
-    # Создаем объект ProjectCreate
-    project_data = schemas.ProjectCreate(
-        name=name,
-        description=description,
-        confluence_data=confluence_data_dict,
-        jira_data=jira_data_dict,
-        users=users_list
-    )
     
     # Создаем проект с обложкой если она есть
     project = await services.create_project(
         db=db, 
-        data=project_data, 
+        data=data, 
         user_id=current_user.id,
-        cover_bytes=cover_bytes,
-        cover_filename=cover_filename,
-        cover_default=cover_default
+        cover_default=data.cover_name
     )
     
     # Добавить счетчики

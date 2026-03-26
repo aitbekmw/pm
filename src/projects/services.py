@@ -49,11 +49,11 @@ async def create_project(
     db.add(project)
     await db.flush()
     
-    # Автоматически добавить создателя как участника с ролью Manager
+    # Автоматически добавить создателя как участника с ролью Owner
     creator_access = ProjectAccess(
         project_id=project.id,
         user_id=user_id,
-        role="Manager",
+        role="Owner",
         granted_at=datetime.now(timezone.utc)
     )
     db.add(creator_access)
@@ -69,7 +69,7 @@ async def create_project(
             access = ProjectAccess(
                 project_id=project.id,
                 user_id=user_data.id,
-                role=user_data.role,
+                role=user_data.role or "Member",
                 granted_at=datetime.now(timezone.utc)
             )
             db.add(access)
@@ -188,7 +188,7 @@ async def grant_project_access(
     access = ProjectAccess(
         project_id=project_id,
         user_id=user_id,
-        role=role,
+        role=role or "Member",
         granted_at=datetime.now(timezone.utc)
     )
     db.add(access)

@@ -8,6 +8,7 @@ from urllib.parse import quote
 import librosa
 import soundfile as sf
 import logging
+import mimetypes
 
 from src.core.config import settings
 
@@ -71,8 +72,31 @@ class S3Storage:
             logger.error(f"Error calculating audio duration: {e}")
             return None
 
-    def upload_file(self, file_obj: BinaryIO, object_name: str, content_type: str = "audio/mpeg") -> Optional[str]:
+    def _get_content_type(self, object_name: str, default: str = "application/octet-stream") -> str:
+        """Определить content-type по расширению файла"""
+        # Специфичные аудио форматы, которые лучше отдавать правильно
+        audio_map = {
+            '.mp3': 'audio/mpeg',
+            '.wav': 'audio/wav',
+            '.ogg': 'audio/ogg',
+            '.webm': 'audio/webm',
+            '.m4a': 'audio/mp4',
+            '.flac': 'audio/flac',
+            '.aac': 'audio/aac'
+        }
+        
+        ext = object_name.lower().split('.')[-1] if '.' in object_name else ''
+        if ext and f'.{ext}' in audio_map:
+            return audio_map[f'.{ext}']
+            
+        content_type, _ = mimetypes.guess_type(object_name)
+        return content_type or default
+
+    def upload_file(self, file_obj: BinaryIO, object_name: str, content_type: Optional[str] = None) -> Optional[str]:
         """Загрузить файл в S3 и вернуть финальный путь файла"""
+        if not content_type or content_type == "audio/mpeg":
+            content_type = self._get_content_type(object_name, default="audio/mpeg" if object_name.startswith("meetings/") else "application/octet-stream")
+            
         try:
             # Если это аудиофайл (начинается с meetings/), конвертируем в WAV
             if object_name.startswith("meetings/"):
@@ -172,6 +196,11 @@ class S3Storage:
         try:
             params = {'Bucket': self.bucket_name, 'Key': object_name}
             
+            # Добавляем Content-Type для правильного проигрывания
+            content_type = self._get_content_type(object_name)
+            if content_type:
+                params['ResponseContentType'] = content_type
+                
             # Если нужно скачивать как attachment, добавляем параметр
             if as_attachment:
                 # Получаем имя файла из пути

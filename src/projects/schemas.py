@@ -14,11 +14,12 @@ class ProjectBase(BaseModel):
 class ProjectUserCreate(BaseModel):
     """Пользователь для добавления в проект при создании"""
     id: int
-    role: Optional[str] = None
+    role: Optional[str] = "Member"
 
 
 class ProjectCreate(ProjectBase):
     users: Optional[list[ProjectUserCreate]] = None
+    cover_name: Optional[str] = None
 
 
 class ProjectUpdate(BaseModel):
@@ -52,7 +53,7 @@ class ProjectOut(ProjectBase):
 
 class ProjectAccessBase(BaseModel):
     user_id: int
-    role: Optional[str] = None
+    role: Optional[str] = "Member"
 
 
 class ProjectAccessCreate(ProjectAccessBase):

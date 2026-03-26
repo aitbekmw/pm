@@ -9,6 +9,7 @@ from src.companies.models import Company
 from src.users.models import User
 from src.projects.models import Project
 from src.meetings.models import Meeting
+from src.faq.models import FAQ
 from src.core.admin_auth import AdminAuthenticationBackend
 from starlette.middleware.sessions import SessionMiddleware
 from wtforms import SelectField
@@ -224,6 +225,42 @@ class MeetingAdmin(RestrictedModelView, model=Meeting):
     ]
 
 
+class FAQAdmin(RestrictedModelView, model=FAQ):
+    name = "FAQ (Ответы на вопросы)"
+    name_plural = "FAQ"
+    icon = "fa-solid fa-circle-question"
+
+    column_list = [FAQ.question, FAQ.order, FAQ.is_active, FAQ.created_at]
+    column_details_list = [
+        FAQ.question, FAQ.answer, FAQ.order, FAQ.is_active, 
+        FAQ.created_at, FAQ.updated_at
+    ]
+    column_searchable_list = [FAQ.question, FAQ.answer]
+    column_sortable_list = [FAQ.order, FAQ.is_active, FAQ.created_at]
+
+    column_labels = {
+        FAQ.question: "Вопрос",
+        FAQ.answer: "Ответ",
+        FAQ.order: "Порядок",
+        FAQ.is_active: "Активен",
+        FAQ.created_at: "Дата создания",
+        FAQ.updated_at: "Дата обновления",
+    }
+
+    can_create = True
+    can_edit = True
+    can_delete = True
+    can_view_details = True
+    page_size = 25
+
+    form_columns = [
+        FAQ.question,
+        FAQ.answer,
+        FAQ.order,
+        FAQ.is_active,
+    ]
+
+
 class AnalyticsView(BaseView):
     name = "Аналитика"
     icon = "fa-solid fa-chart-pie"
@@ -330,6 +367,7 @@ def setup_admin(app):
     admin.add_view(UserAdmin)
     admin.add_view(ProjectAdmin)
     admin.add_view(MeetingAdmin)
+    admin.add_view(FAQAdmin)
     # admin.add_view(MeetingProcessingAdmin)
     # admin.add_view(TranscriptAdmin)
     
