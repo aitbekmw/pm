@@ -16,6 +16,9 @@ class FAQCategory(Base):
 
     faqs = relationship("FAQ", back_populates="category", order_by="FAQ.order")
 
+    def __str__(self):
+        return self.name
+
 class FAQ(Base):
     __tablename__ = "faqs"
 
