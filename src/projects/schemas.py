@@ -19,6 +19,7 @@ class ProjectUserCreate(BaseModel):
 
 class ProjectCreate(ProjectBase):
     users: Optional[list[ProjectUserCreate]] = None
+    cover_name: Optional[str] = None
 
 
 class ProjectUpdate(BaseModel):
