@@ -231,7 +231,7 @@ class S3Storage:
 
         self.s3_client = boto3.client(
             's3',
-            endpoint_url="http://10.0.30.46:9000",
+            endpoint_url=endpoint_url,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
             region_name=settings.S3_REGION,
