@@ -1,6 +1,5 @@
-version: '3.8'
-
 volumes:
+  # Используем отдельные тома для dev, чтобы не мешать prod данным
   postgres_data_dev:
   redis_data_dev:
 
@@ -10,10 +9,8 @@ services:
     container_name: pm-assistant-db-dev
     volumes:
       - postgres_data_dev:/var/lib/postgresql/data
-    environment:
-      POSTGRES_USER: pm_user
-      POSTGRES_PASSWORD: pm_password
-      POSTGRES_DB: pm_assistant
+    env_file:
+      - .env
     ports:
       - "5432:5432"
     restart: unless-stopped
@@ -27,6 +24,37 @@ services:
       - "6379:6379"
     restart: unless-stopped
 
-  # Для локальной разработки запускаем только БД и Redis
-  # API и Worker запускаются локально через uv
+  api:
+    build:
+      context: .
+      target: runtime
+    container_name: pm-assistant-api-dev
+    env_file:
+      - .env
+    ports:
+      - "${PORT:-8001}:8000"
+    volumes:
+      - .:/app
+      - /app/.venv  # Анонимный том, чтобы локальный .venv не затирал серверный
+    # Переопределяем команду для hot-reload
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
 
+  worker:
+    build:
+      context: .
+      target: runtime
+    container_name: pm-assistant-worker-dev
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - /app/.venv
+    entrypoint: ["/app/worker.sh"]
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
