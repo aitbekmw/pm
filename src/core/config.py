@@ -35,6 +35,7 @@ class Settings(BaseSettings):
 
     # S3 / MinIO
     S3_ENDPOINT_URL: str = Field(..., env="S3_ENDPOINT_URL")
+    S3_PUBLIC_URL: str = Field(..., env="S3_PUBLIC_URL")
     S3_ACCESS_KEY: str = Field(..., env="S3_ACCESS_KEY")
     S3_SECRET_KEY: str = Field(..., env="S3_SECRET_KEY")
     S3_BUCKET_NAME: str = Field(default="pm-assistant", env="S3_BUCKET_NAME")
@@ -78,6 +79,6 @@ class Settings(BaseSettings):
 
     FRONTEND_URL: str = Field(default="http://localhost:3000", env="FRONTEND_URL")
 
-    model_config = ConfigDict(env_file=".env", case_sensitive=False)
+    model_config = ConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 
 settings = Settings()

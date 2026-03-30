@@ -194,40 +194,52 @@ class S3Storage:
 
         # Нормализуем endpoint URL (убираем trailing slash, если есть)
         endpoint_url = settings.S3_ENDPOINT_URL.rstrip('/')
+        public_url = settings.S3_PUBLIC_URL.rstrip('/')
 
-        # Логируем длину ключей (без самих значений для безопасности)
+        # Логируем длину ключей
         logger.info(
-            f"S3 initialization: endpoint={endpoint_url}, "
+            f"S3 initialization: internal_endpoint={endpoint_url}, public_endpoint={public_url}, "
             f"access_key_length={len(access_key)}, secret_key_length={len(secret_key)}, "
             f"bucket={settings.S3_BUCKET_NAME}, region={settings.S3_REGION}"
         )
 
         # Для MinIO требуется path-style addressing
-        is_minio = (
-            'minio' in endpoint_url.lower()
-            or endpoint_url.startswith('http://10.')
-            or endpoint_url.startswith('http://192.168.')
-            or endpoint_url.startswith('http://172.')
-            or '/minio' in endpoint_url.lower()
+        # Внутренний клиент (для закачки/удаления)
+        internal_is_minio = (
+            'minio' in endpoint_url.lower() or '/minio' in endpoint_url.lower() or '172.' in endpoint_url or '127.' in endpoint_url
         )
-
-        if is_minio:
-            s3_config = Config(
-                signature_version='s3v4',
-                s3={'addressing_style': 'path'}
-            )
-            logger.info("Using MinIO configuration with path-style addressing")
-        else:
-            s3_config = Config(signature_version='s3v4')
-
+        internal_config = Config(
+            signature_version='s3v4',
+            s3={'addressing_style': 'path'} if internal_is_minio else {}
+        )
+        
         self.s3_client = boto3.client(
             's3',
             endpoint_url=endpoint_url,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
             region_name=settings.S3_REGION,
-            config=s3_config
+            config=internal_config
         )
+
+        # Публичный клиент (для пресайн ссылок)
+        public_is_minio = (
+            'minio' in public_url.lower() or '/minio' in public_url.lower()
+        )
+        public_config = Config(
+            signature_version='s3v4',
+            s3={'addressing_style': 'path'} if public_is_minio else {}
+        )
+        
+        self.s3_public_client = boto3.client(
+            's3',
+            endpoint_url=public_url,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            region_name=settings.S3_REGION,
+            config=public_config
+        )
+
         self.bucket_name = settings.S3_BUCKET_NAME
 
     # ------------------------------------------------------------------
@@ -336,12 +348,12 @@ class S3Storage:
                 filename = object_name.split('/')[-1]
                 params['ResponseContentDisposition'] = f'attachment; filename="{filename}"'
 
-            url = self.s3_client.generate_presigned_url(
+            url = self.s3_public_client.generate_presigned_url(
                 'get_object',
                 Params=params,
                 ExpiresIn=expiration
             )
-            logger.debug(f"Presigned URL generated: {object_name} (Content-Type: {content_type})")
+            logger.debug(f"Presigned URL generated (public): {object_name} (Content-Type: {content_type})")
             return url
         except ClientError as e:
             logger.error(f"Error generating presigned URL: {e}")
@@ -368,7 +380,7 @@ class S3Storage:
             logger.debug(f"Using default cover image: {object_name}")
             return object_name
 
-        base_url = settings.S3_ENDPOINT_URL.rstrip('/')
+        base_url = settings.S3_PUBLIC_URL.rstrip('/')
         encoded_path = quote(object_name, safe='/')
         return f"{base_url}/{self.bucket_name}/{encoded_path}"
 

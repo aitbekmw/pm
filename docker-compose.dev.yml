@@ -32,7 +32,7 @@ services:
     env_file:
       - .env
     ports:
-      - "${PORT:-8001}:8000"
+      - "${PORT:-8000}:8000"
     volumes:
       - .:/app
       - /app/.venv  # Анонимный том, чтобы локальный .venv не затирал серверный
