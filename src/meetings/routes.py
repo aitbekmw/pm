@@ -59,18 +59,8 @@ async def create_meeting(
         importance=importance
     )
     
-    audio_content = None
-    audio_filename = None
-    
-    if audio_file:
-        audio_content = await audio_file.read()
-        audio_filename = audio_file.filename
-        # Преобразовать в file-like object
-        import io
-        audio_content = io.BytesIO(audio_content)
-    
     meeting = await services.create_meeting(
-        db, data, current_user.id, audio_content, audio_filename
+        db, data, current_user.id, audio_file
     )
     
     # Автоматически запустить обработку если загружено аудио

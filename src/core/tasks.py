@@ -4,18 +4,18 @@ from sqlalchemy import select
 import io
 import logging
 import uuid
+import os
+import tempfile
 
 from src.db.session import AsyncSessionLocal
 from src.db.base import import_all_models
-from src.meetings.models import Meeting, MeetingProcessing, Transcript, Summary
+from src.meetings.models import Meeting, MeetingProcessing, Transcript, Summary, ActionItem
 from src.core.storage import storage
 from src.core.ai_services import ai_service
 from src.core.pdf_generator import generate_meeting_pdf
 from src.meetings import selectors
 from arq.connections import RedisSettings
 from src.core.config import settings
-import uuid
-import io
 
 # Импортируем все модели для правильной инициализации ForeignKey
 import_all_models()
@@ -41,230 +41,187 @@ async def process_meeting(ctx, meeting_id: int):
             processing = MeetingProcessing(
                 meeting_id=meeting_id,
                 status="processing",
-                current_stage="transcription",
+                current_stage="initializing",
                 progress=0,
                 started_at=datetime.now(timezone.utc)
             )
             db.add(processing)
             await db.commit()
+        elif processing.status == "completed":
+            logger.info(f"Meeting {meeting_id} already processed. Skipping.")
+            return {"success": True, "message": "Already completed"}
         else:
             processing.status = "processing"
-            processing.current_stage = "transcription"
-            processing.progress = 0
-            processing.started_at = datetime.now(timezone.utc)
             processing.error_message = None
             await db.commit()
         
+        tmp_path = None
         try:
-            # Шаг 1: Транскрибация
-            processing.current_stage = "transcription"
-            processing.progress = 10
-            await db.commit()
-            
-            # Скачать аудио из S3
-            audio_data = storage.download_file(meeting.audio_file_path)
-            if not audio_data:
-                raise Exception("Failed to download audio file")
-            
-            processing.progress = 20
-            await db.commit()
-            
-            # Транскрибировать
-            audio_file = io.BytesIO(audio_data)
-            transcript_data = await ai_service.transcribe_audio(
-                audio_file, 
-                filename=meeting.audio_file_path.split('/')[-1]
+            # Шаг 1: Транскрибация (проверяем, есть ли уже транскрипт)
+            transcript_result = await db.execute(
+                select(Transcript).where(Transcript.meeting_id == meeting_id)
             )
+            transcript_obj = transcript_result.scalars().first()
             
-            if not transcript_data:
-                raise Exception("Transcription failed")
-            
-            processing.progress = 50
-            await db.commit()
-            
-            # Сохранить транскрипт
-            # Убеждаемся, что transcript_data - это словарь
-            if not isinstance(transcript_data, dict):
-                raise Exception(f"Invalid transcript data format: expected dict, got {type(transcript_data)}")
-            
-            transcript_text = transcript_data.get('text', '')
-            if not transcript_text:
-                raise Exception("Transcript text is empty")
-            
-            # Форматирование транскрипта
-            processing.current_stage = "transcription_formatting"
-            processing.progress = 55
-            await db.commit()
-            
-            # Форматируем общий текст
-            formatted_transcript = await ai_service.format_transcript(transcript_text)
-            
-            # Форматируем сегменты для интерактивного режима
-            segments = transcript_data.get('segments', [])
-            if segments:
-                logger.info(f"Formatting {len(segments)} segments for meeting {meeting_id}...")
-                updated_segments = await ai_service.format_segments(segments)
-                transcript_data['segments'] = updated_segments
-            
-            transcript_obj = Transcript(
-                meeting_id=meeting_id,
-                content=formatted_transcript,
-                timestamps=transcript_data
-            )
-            db.add(transcript_obj)
-            await db.commit()
-            
-            # Обновить длительность встречи если её не было
-            # Duration может быть в секундах или минутах в зависимости от источника
-            if not meeting.duration:
-                duration = transcript_data.get('duration')
+            if transcript_obj:
+                logger.info(f"Transcript already exists for meeting {meeting_id}. Skipping transcription.")
+                formatted_transcript = transcript_obj.content
+                transcript_text = formatted_transcript # Fallback if timestamps not needed
+            else:
+                processing.current_stage = "transcription"
+                processing.progress = 10
+                await db.commit()
                 
-                if duration:
-                    # Если это float или очень большое число, вероятно в секундах
-                    if isinstance(duration, (int, float)):
+                # Скачать аудио из S3 на диск
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                    tmp_path = tmp.name
+                
+                success = await storage.async_download_file_to_path(meeting.audio_file_path, tmp_path)
+                if not success:
+                    raise Exception("Failed to download audio file to disk")
+                
+                processing.progress = 20
+                await db.commit()
+                
+                # Транскрибировать
+                with open(tmp_path, "rb") as audio_file:
+                    transcript_data = await ai_service.transcribe_audio(
+                        audio_file, 
+                        filename=meeting.audio_file_path.split('/')[-1]
+                    )
+                
+                if not transcript_data:
+                    raise Exception("Transcription failed")
+                
+                processing.progress = 50
+                await db.commit()
+                
+                # Сохранить транскрипт
+                transcript_text = transcript_data.get('text', '')
+                if not transcript_text:
+                    raise Exception("Transcript text is empty")
+                
+                processing.current_stage = "transcription_formatting"
+                processing.progress = 55
+                await db.commit()
+                
+                formatted_transcript = await ai_service.format_transcript(transcript_text)
+                
+                segments = transcript_data.get('segments', [])
+                if segments:
+                    updated_segments = await ai_service.format_segments(segments)
+                    transcript_data['segments'] = updated_segments
+                
+                transcript_obj = Transcript(
+                    meeting_id=meeting_id,
+                    content=formatted_transcript,
+                    timestamps=transcript_data
+                )
+                db.add(transcript_obj)
+                
+                # Обновить длительность
+                if not meeting.duration:
+                    duration = transcript_data.get('duration')
+                    if duration and isinstance(duration, (int, float)):
                         duration_minutes = float(duration)
-                        
-                        # Если duration > 1000 секунд (~16+ минут), это вероятно секунды
                         if duration_minutes > 100:
                             duration_minutes = duration_minutes / 60
-                        
                         meeting.duration = int(round(duration_minutes))
-                        logger.info(f"Updated meeting duration: {meeting.duration} minutes (from {duration})")
-                        await db.commit()
+                
+                await db.commit()
             
-            # Шаг 2: Суммаризация
-            processing.current_stage = "summarization"
-            processing.progress = 60
-            await db.commit()
-            
-            logger.info(f"Starting summarization for meeting {meeting_id}...")
-            logger.debug(f"Transcript length: {len(transcript_text)} characters")
-            
-            summary_text = await ai_service.summarize_transcript(
-                transcript_text,
-                meeting.title
+            # Шаг 2: Суммаризация (проверяем, есть ли уже суммаризация)
+            summary_result = await db.execute(
+                select(Summary).where(Summary.meeting_id == meeting_id)
             )
+            summary_obj = summary_result.scalars().first()
             
-            logger.debug(f"Summarization result: {summary_text[:100] if summary_text else 'None'}...")
-            
-            if not summary_text:
-                logger.error(f"Summarization returned None or empty for meeting {meeting_id}")
-                logger.error(f"Meeting ID: {meeting_id}, Title: {meeting.title}, Transcript length: {len(transcript_text)}")
-                raise Exception("Summarization failed")
-            
-            processing.progress = 80
-            await db.commit()
-            
-            # Сохранить суммаризацию
-            summary_obj = Summary(
-                meeting_id=meeting_id,
-                content=summary_text
+            if summary_obj:
+                logger.info(f"Summary already exists for meeting {meeting_id}. Skipping summarization.")
+                summary_text = summary_obj.content
+            else:
+                processing.current_stage = "summarization"
+                processing.progress = 60
+                await db.commit()
+                
+                summary_text = await ai_service.summarize_transcript(formatted_transcript, meeting.title)
+                if not summary_text:
+                    raise Exception("Summarization failed")
+                
+                summary_obj = Summary(meeting_id=meeting_id, content=summary_text)
+                db.add(summary_obj)
+                await db.commit()
+
+            # Шаг 3: Извлечение action items (только если их еще нет)
+            ai_result = await db.execute(
+                select(ActionItem).where(ActionItem.meeting_id == meeting_id)
             )
-            db.add(summary_obj)
-            await db.commit()
-            
-            # Шаг 3: Извлечение action items
-            processing.current_stage = "action_items"
-            processing.progress = 90
-            await db.commit()
-            
-            action_items = await ai_service.extract_action_items(transcript_text)
-            
-            if action_items:
-                from src.meetings.models import ActionItem
-                # Убеждаемся, что action_items - это список
-                if isinstance(action_items, list):
+            if not ai_result.scalars().first():
+                processing.current_stage = "action_items"
+                processing.progress = 90
+                await db.commit()
+                
+                action_items = await ai_service.extract_action_items(formatted_transcript)
+                if action_items and isinstance(action_items, list):
                     for item in action_items:
                         if isinstance(item, dict):
-                            action_item = ActionItem(
+                            db.add(ActionItem(
                                 meeting_id=meeting_id,
                                 title=item.get('title', 'Untitled'),
                                 description=item.get('description'),
                                 status='pending'
-                            )
-                            db.add(action_item)
+                            ))
+                    await db.commit()
+
+            # Шаг 4: Генерация PDF (только если его еще нет)
+            if not meeting.pdf_file_path:
+                processing.current_stage = "pdf_generation"
+                processing.progress = 95
+                await db.commit()
+                
+                notes_list = await selectors.get_meeting_notes(db, meeting_id)
+                notes_data = [{'content': n.content or '', 'created_at': n.created_at} for n in notes_list]
+                
+                organizer_name = None
+                if meeting.organizer:
+                    organizer_name = f"{meeting.organizer.first_name} {meeting.organizer.last_name}".strip()
+                
+                pdf_buffer = generate_meeting_pdf(
+                    title=meeting.title,
+                    meeting_date=meeting.meeting_date,
+                    duration=meeting.duration,
+                    transcript=formatted_transcript,
+                    summary=summary_text,
+                    notes=notes_data,
+                    organizer_name=organizer_name
+                )
+                
+                pdf_path = f"meetings/{uuid.uuid4()}.pdf"
+                pdf_s3_path, _ = storage.upload_file(pdf_buffer, pdf_path, content_type="application/pdf")
+                
+                if pdf_s3_path:
+                    meeting.pdf_file_path = pdf_s3_path
                     await db.commit()
             
-            # Шаг 4: Генерация PDF
-            processing.current_stage = "pdf_generation"
-            processing.progress = 95
-            await db.commit()
-            
-            logger.info(f"Starting PDF generation for meeting {meeting_id}...")
-            
-            # Получить заметки для PDF
-            notes_list = await selectors.get_meeting_notes(db, meeting_id)
-            notes_data = []
-            for note in notes_list:
-                notes_data.append({
-                    'content': note.content or '',
-                    'created_at': note.created_at
-                })
-            
-            # Получить имя организатора
-            organizer_name = None
-            if meeting.organizer:
-                organizer_name = f"{meeting.organizer.first_name} {meeting.organizer.last_name}".strip()
-            
-            # Генерировать PDF
-            pdf_buffer = generate_meeting_pdf(
-                title=meeting.title,
-                meeting_date=meeting.meeting_date,
-                duration=meeting.duration,
-                transcript=formatted_transcript,
-                summary=summary_text,
-                notes=notes_data,
-                organizer_name=organizer_name
-            )
-            
-            # Загрузить PDF в S3
-            pdf_path = f"meetings/{uuid.uuid4()}.pdf"
-            pdf_buffer.seek(0)  # Вернуться в начало буфера
-            pdf_file_obj = io.BytesIO(pdf_buffer.read())
-            pdf_s3_path, _ = storage.upload_file(pdf_file_obj, pdf_path, content_type="application/pdf")
-            
-            if pdf_s3_path:
-                meeting.pdf_file_path = pdf_s3_path
-                await db.commit()
-                logger.info(f"PDF uploaded to S3: {pdf_s3_path}")
-            else:
-                logger.error(f"Failed to upload PDF to S3 for meeting {meeting_id}")
-            
-            # Завершить обработку
             processing.status = "completed"
             processing.current_stage = "completed"
             processing.progress = 100
             processing.completed_at = datetime.now(timezone.utc)
             await db.commit()
             
-            logger.info(f"Meeting {meeting_id} processing completed successfully")
-            return {
-                "success": True,
-                "meeting_id": meeting_id,
-                "transcript_length": len(transcript_text),
-                "action_items_count": len(action_items) if action_items else 0
-            }
+            return {"success": True, "meeting_id": meeting_id}
             
         except Exception as e:
-            # Обработка ошибок
             logger.error(f"Error processing meeting {meeting_id}: {e}", exc_info=True)
-            try:
-                # Откатываем транзакцию перед обновлением статуса
-                await db.rollback()
-                
-                # Обновляем статус обработки
-                processing.status = "failed"
-                processing.error_message = str(e)
-                processing.completed_at = datetime.now(timezone.utc)
-                await db.commit()
-            except Exception as commit_error:
-                logger.error(f"Error updating processing status: {commit_error}", exc_info=True)
-                await db.rollback()
-            
-            return {
-                "error": str(e),
-                "meeting_id": meeting_id
-            }
+            await db.rollback()
+            processing.status = "failed"
+            processing.error_message = str(e)
+            processing.completed_at = datetime.now(timezone.utc)
+            await db.commit()
+            return {"error": str(e), "meeting_id": meeting_id}
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
 
 
 async def process_meeting_from_subtitle(ctx, meeting_id: int):
@@ -287,119 +244,104 @@ async def process_meeting_from_subtitle(ctx, meeting_id: int):
             processing = MeetingProcessing(
                 meeting_id=meeting_id,
                 status="processing",
-                current_stage="summarization",
-                progress=10,
+                current_stage="initializing",
+                progress=0,
                 started_at=datetime.now(timezone.utc)
             )
             db.add(processing)
             await db.commit()
+        elif processing.status == "completed":
+            return {"success": True, "message": "Already completed"}
         else:
             processing.status = "processing"
-            processing.current_stage = "summarization"
-            processing.progress = 10
-            processing.started_at = datetime.now(timezone.utc)
             processing.error_message = None
             await db.commit()
 
         try:
             transcript_text = meeting.subtitle
-
-            # Форматирование
-            processing.current_stage = "transcription_formatting"
-            processing.progress = 20
-            await db.commit()
             
-            # Форматируем общий текст
-            formatted_transcript = await ai_service.format_transcript(transcript_text)
-
-            # Сохраняем транскрипт из subtitle (отформатированный)
-            transcript_obj = Transcript(
-                meeting_id=meeting_id,
-                content=formatted_transcript,
-                timestamps=None
+            # 1. Transcript
+            transcript_result = await db.execute(
+                select(Transcript).where(Transcript.meeting_id == meeting_id)
             )
-            db.add(transcript_obj)
-            await db.commit()
+            transcript_obj = transcript_result.scalars().first()
+            if not transcript_obj:
+                processing.current_stage = "transcription_formatting"
+                processing.progress = 20
+                await db.commit()
+                
+                formatted_transcript = await ai_service.format_transcript(transcript_text)
+                transcript_obj = Transcript(meeting_id=meeting_id, content=formatted_transcript)
+                db.add(transcript_obj)
+                await db.commit()
+            else:
+                formatted_transcript = transcript_obj.content
 
-            processing.progress = 30
-            await db.commit()
+            # 2. Summary
+            summary_result = await db.execute(select(Summary).where(Summary.meeting_id == meeting_id))
+            summary_obj = summary_result.scalars().first()
+            if not summary_obj:
+                processing.current_stage = "summarization"
+                processing.progress = 40
+                await db.commit()
+                
+                summary_text = await ai_service.summarize_transcript(transcript_text, meeting.title)
+                if not summary_text:
+                    raise Exception("Summarization failed")
+                
+                summary_obj = Summary(meeting_id=meeting_id, content=summary_text)
+                db.add(summary_obj)
+                await db.commit()
+            else:
+                summary_text = summary_obj.content
 
-            # Суммаризация
-            processing.current_stage = "summarization"
-            processing.progress = 40
-            await db.commit()
-
-            logger.info(f"Starting summarization from subtitle for meeting {meeting_id}...")
-            summary_text = await ai_service.summarize_transcript(transcript_text, meeting.title)
-
-            if not summary_text:
-                raise Exception("Summarization failed")
-
-            summary_obj = Summary(
-                meeting_id=meeting_id,
-                content=summary_text
-            )
-            db.add(summary_obj)
-            await db.commit()
-
-            processing.progress = 70
-            await db.commit()
-
-            # Action items
-            processing.current_stage = "action_items"
-            processing.progress = 80
-            await db.commit()
-
-            action_items = await ai_service.extract_action_items(transcript_text)
-            if action_items:
-                from src.meetings.models import ActionItem
-                if isinstance(action_items, list):
+            # 3. Action Items
+            ai_result = await db.execute(select(ActionItem).where(ActionItem.meeting_id == meeting_id))
+            if not ai_result.scalars().first():
+                processing.current_stage = "action_items"
+                processing.progress = 80
+                await db.commit()
+                
+                action_items = await ai_service.extract_action_items(transcript_text)
+                if action_items and isinstance(action_items, list):
                     for item in action_items:
                         if isinstance(item, dict):
-                            action_item = ActionItem(
+                            db.add(ActionItem(
                                 meeting_id=meeting_id,
                                 title=item.get('title', 'Untitled'),
                                 description=item.get('description'),
                                 status='pending'
-                            )
-                            db.add(action_item)
+                            ))
                     await db.commit()
 
-            # PDF
-            processing.current_stage = "pdf_generation"
-            processing.progress = 90
-            await db.commit()
-
-            logger.info(f"Starting PDF generation for meeting {meeting_id}...")
-
-            notes_list = await selectors.get_meeting_notes(db, meeting_id)
-            notes_data = [{'content': n.content or '', 'created_at': n.created_at} for n in notes_list]
-
-            organizer_name = None
-            if meeting.organizer:
-                organizer_name = f"{meeting.organizer.first_name} {meeting.organizer.last_name}".strip()
-
-            pdf_buffer = generate_meeting_pdf(
-                title=meeting.title,
-                meeting_date=meeting.meeting_date,
-                duration=meeting.duration,
-                transcript=formatted_transcript,
-                summary=summary_text,
-                notes=notes_data,
-                organizer_name=organizer_name
-            )
-
-            pdf_path = f"meetings/{uuid.uuid4()}.pdf"
-            pdf_buffer.seek(0)
-            pdf_file_obj = io.BytesIO(pdf_buffer.read())
-            pdf_s3_path, _ = storage.upload_file(pdf_file_obj, pdf_path, content_type="application/pdf")
-
-            if pdf_s3_path:
-                meeting.pdf_file_path = pdf_s3_path
+            # 4. PDF
+            if not meeting.pdf_file_path:
+                processing.current_stage = "pdf_generation"
+                processing.progress = 90
                 await db.commit()
-                logger.info(f"PDF uploaded to S3: {pdf_s3_path}")
-            else:
-                logger.error(f"Failed to upload PDF to S3 for meeting {meeting_id}")
+                
+                notes_list = await selectors.get_meeting_notes(db, meeting_id)
+                notes_data = [{'content': n.content or '', 'created_at': n.created_at} for n in notes_list]
+                
+                organizer_name = None
+                if meeting.organizer:
+                    organizer_name = f"{meeting.organizer.first_name} {meeting.organizer.last_name}".strip()
+                
+                pdf_buffer = generate_meeting_pdf(
+                    title=meeting.title,
+                    meeting_date=meeting.meeting_date,
+                    duration=meeting.duration,
+                    transcript=formatted_transcript,
+                    summary=summary_text,
+                    notes=notes_data,
+                    organizer_name=organizer_name
+                )
+                
+                pdf_path = f"meetings/{uuid.uuid4()}.pdf"
+                pdf_s3_path, _ = storage.upload_file(pdf_buffer, pdf_path, content_type="application/pdf")
+                if pdf_s3_path:
+                    meeting.pdf_file_path = pdf_s3_path
+                    await db.commit()
 
             processing.status = "completed"
             processing.current_stage = "completed"
@@ -407,13 +349,7 @@ async def process_meeting_from_subtitle(ctx, meeting_id: int):
             processing.completed_at = datetime.now(timezone.utc)
             await db.commit()
 
-            logger.info(f"Meeting {meeting_id} subtitle processing completed successfully")
-            return {
-                "success": True,
-                "meeting_id": meeting_id,
-                "transcript_length": len(transcript_text),
-                "action_items_count": len(action_items) if action_items else 0
-            }
+            return {"success": True, "meeting_id": meeting_id}
 
         except Exception as e:
             logger.error(f"Error processing meeting {meeting_id} from subtitle: {e}", exc_info=True)
