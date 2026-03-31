@@ -25,8 +25,11 @@ USER_ROLE_CHOICES = [
     ("QA", "QA"),
 ]
 
-CATEGORY_ORDER_CHOICES = [(i, str(i)) for i in range(1, 16)]
-FAQ_ORDER_CHOICES = [(i, str(i)) for i in range(1, 31)]
+def range_choices(start: int, end: int):
+    return [(i, str(i)) for i in range(start, end + 1)]
+
+MAX_FAQ_CATEGORIES = 15
+MAX_FAQS_PER_CATEGORY = 30
 
 
 class BaseAdmin(ModelView):
@@ -266,7 +269,7 @@ class FAQCategoryAdmin(RestrictedModelView, model=FAQCategory):
 
     form_args = {
         "order": {
-            "choices": CATEGORY_ORDER_CHOICES,
+            "choices": range_choices(1, MAX_FAQ_CATEGORIES),
             "coerce": int,
         }
     }
@@ -316,7 +319,7 @@ class FAQAdmin(RestrictedModelView, model=FAQ):
 
     form_args = {
         "order": {
-            "choices": FAQ_ORDER_CHOICES,
+            "choices": range_choices(1, MAX_FAQS_PER_CATEGORY),
             "coerce": int,
         }
     }
