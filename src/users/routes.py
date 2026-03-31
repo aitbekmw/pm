@@ -313,6 +313,30 @@ async def me(request: Request, db: AsyncSession = Depends(get_db)):
     return UserOut.model_validate(user)
 
 
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def deactivate_me(
+    request: Request,
+    response: Response,
+    current_user: UserOut = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Деактивирует аккаунт текущего пользователя и завершает сессию.
+    """
+    # 1. Деактивируем пользователя и переназначим проекты
+    success = await services.deactivate_user(db, current_user.id)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not deactivate account")
+    
+    # 2. Удаляем сессию
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if session_id:
+        await services.logout(db, session_id)
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/roles", response_model=dict)
 async def get_roles(
     current_user = Depends(get_current_user)
@@ -401,3 +425,23 @@ async def get_user(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     
     return UserOut.model_validate(user)
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def deactivate_user(
+    user_id: int,
+    current_user: UserOut = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Деактивирует пользователя (перевод в статус deactivated).
+    Доступно только администраторам.
+    """
+    if current_user.role != "Admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    
+    success = await services.deactivate_user(db, user_id)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found or already deactivated")
+    
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

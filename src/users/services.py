@@ -285,6 +285,101 @@ async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
     return result.scalars().first()
 
 
+async def deactivate_user(db: AsyncSession, user_id: int) -> bool:
+    """
+    Деактивировать пользователя:
+    1. Перевод в статус deactivated и is_active=False
+    2. Переназначение владельца проектов (на пользователя с макс. кол-вом встреч)
+    3. Уведомление новым владельцам
+    """
+    from src.projects.models import Project, ProjectAccess
+    from src.meetings.models import Meeting
+    from src.notifications import services as notification_services
+
+    # 1. Найти и обновить пользователя
+    user = await get_user_by_id(db, user_id)
+    if not user:
+        return False
+    
+    user.is_active = False
+    user.status = "deactivated"
+    await db.flush()
+
+    # 2. Найти проекты, где пользователь был Owner
+    owner_projects_result = await db.execute(
+        select(ProjectAccess)
+        .where(ProjectAccess.user_id == user_id, ProjectAccess.role == "Owner")
+    )
+    owner_accesses = owner_projects_result.scalars().all()
+
+    for access in owner_accesses:
+        project_id = access.project_id
+        
+        # Найти всех остальных участников проекта (активных)
+        participants_result = await db.execute(
+            select(ProjectAccess.user_id)
+            .join(User, ProjectAccess.user_id == User.id)
+            .where(
+                ProjectAccess.project_id == project_id,
+                ProjectAccess.user_id != user_id,
+                User.is_active == True
+            )
+        )
+        participant_ids = participants_result.scalars().all()
+
+        if not participant_ids:
+            # Если в проекте больше никого нет, оставляем как есть (или можно искать по всей компании)
+            # В данном случае просто пропускаем переназначение
+            continue
+
+        # Найти участника с максимальным количеством организованных встреч
+        # Считаем общее количество встреч в системе для каждого кандидата
+        meeting_counts_result = await db.execute(
+            select(User.id, func.count(Meeting.id).label("meeting_count"))
+            .outerjoin(Meeting, Meeting.organizer_id == User.id)
+            .where(User.id.in_(participant_ids))
+            .group_by(User.id)
+            .order_by(func.count(Meeting.id).desc())
+            .limit(1)
+        )
+        best_candidate_row = meeting_counts_result.first()
+        
+        if best_candidate_row:
+            new_owner_id = best_candidate_row[0]
+            
+            # Назначаем нового владельца
+            new_owner_access_result = await db.execute(
+                select(ProjectAccess).where(
+                    ProjectAccess.project_id == project_id,
+                    ProjectAccess.user_id == new_owner_id
+                )
+            )
+            new_owner_access = new_owner_access_result.scalars().first()
+            if new_owner_access:
+                new_owner_access.role = "Owner"
+                
+                # У деактивированного пользователя меняем роль на Member (чтобы не было двух овнеров)
+                access.role = "Member"
+                
+                await db.flush()
+
+                # Уведомление новому владельцу
+                project_result = await db.execute(select(Project).where(Project.id == project_id))
+                project = project_result.scalars().first()
+                if project:
+                    await notification_services.create_notification(
+                        db=db,
+                        user_id=new_owner_id,
+                        type="added_to_project",  # Можно добавить новый тип если нужно, но этот подходит
+                        title="Назначен новый владелец проекта",
+                        message=f"Вы назначены новым владельцем проекта {project.name}",
+                        project_id=project_id
+                    )
+
+    await db.commit()
+    return True
+
+
 
 
 async def login_with_google(db: AsyncSession, google_user: dict) -> Optional[str]:
