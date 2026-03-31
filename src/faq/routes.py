@@ -9,7 +9,7 @@ from src.faq import schemas, services
 
 router = APIRouter(prefix="/faq", tags=["faq"])
 
-@router.get("/", response_model=List[schemas.FAQCategoryOut])
+@router.get("/", response_model=List[schemas.FAQCategoryPublicOut])
 async def get_faqs(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -24,11 +24,14 @@ async def get_faqs(
         result.append({
             "id": cat.id,
             "name": cat.name,
-            "order": cat.order,
-            "is_active": cat.is_active,
-            "created_at": cat.created_at,
-            "updated_at": cat.updated_at,
-            "items": cat.faqs
+            "items": [
+                {
+                    "id": faq.id,
+                    "question": faq.question,
+                    "answer": faq.answer,
+                }
+                for faq in cat.faqs
+            ],
         })
     return result
 

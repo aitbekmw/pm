@@ -16,6 +16,7 @@ from src.core.pdf_generator import generate_meeting_pdf
 from src.meetings import selectors
 from arq.connections import RedisSettings
 from src.core.config import settings
+from src.core.logging import setup_logging
 
 # Импортируем все модели для правильной инициализации ForeignKey
 import_all_models()
@@ -368,7 +369,7 @@ async def process_meeting_from_subtitle(ctx, meeting_id: int):
 
 async def startup(ctx):
     """Инициализация при запуске воркера"""
-    pass
+    setup_logging()
 
 
 async def shutdown(ctx):
