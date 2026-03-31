@@ -10,9 +10,6 @@ class OrganizerInfo(BaseModel):
     ad_account: str
     first_name: str
     last_name: str
-    is_active: bool = True
-    is_deactivated: bool = False
-    deactivation_badge: Optional[str] = None
     
     model_config = ConfigDict(from_attributes=True)
     
@@ -20,13 +17,6 @@ class OrganizerInfo(BaseModel):
     def full_name(self) -> str:
         """Полное имя организатора"""
         return f"{self.first_name} {self.last_name}".strip()
-
-    @model_validator(mode="after")
-    def set_deactivated_fields(self):
-        if not self.is_active:
-            self.is_deactivated = True
-            self.deactivation_badge = "Аккаунт деактивирован"
-        return self
 
 
 class MeetingBase(BaseModel):
@@ -172,8 +162,6 @@ class MeetingListOutWithOrganizer(BaseModel):
     organizer_id: Optional[int]
     organizer: Optional[OrganizerInfo] = None
     organizer_name: Optional[str] = None  # Имя организатора для удобства
-    organizer_is_deactivated: bool = False
-    organizer_status_badge: Optional[str] = None
     meeting_date: datetime
     duration: Optional[int] = None  # Длительность в секундах
     importance: str
@@ -189,39 +177,22 @@ class MeetingListOutWithOrganizer(BaseModel):
         if isinstance(data, dict):
             # Получаем имя организатора
             organizer_name = None
-            organizer_is_deactivated = False
-            organizer_status_badge = None
             if 'organizer' in data and data['organizer']:
                 organizer = data['organizer']
                 if isinstance(organizer, dict):
                     if 'first_name' in organizer and 'last_name' in organizer:
                         organizer_name = f"{organizer['first_name']} {organizer['last_name']}".strip()
-                    if organizer.get("is_active") is False:
-                        organizer_is_deactivated = True
-                        organizer_status_badge = "Аккаунт деактивирован"
                 elif hasattr(organizer, 'first_name') and hasattr(organizer, 'last_name'):
                     organizer_name = f"{organizer.first_name} {organizer.last_name}".strip()
-                    if getattr(organizer, "is_active", True) is False:
-                        organizer_is_deactivated = True
-                        organizer_status_badge = "Аккаунт деактивирован"
             data['organizer_name'] = organizer_name
-            data['organizer_is_deactivated'] = organizer_is_deactivated
-            data['organizer_status_badge'] = organizer_status_badge
         elif hasattr(data, 'organizer'):
             # Обрабатываем объект SQLAlchemy
             organizer_name = None
-            organizer_is_deactivated = False
-            organizer_status_badge = None
             if data.organizer:
                 organizer = data.organizer
                 if hasattr(organizer, 'first_name') and hasattr(organizer, 'last_name'):
                     organizer_name = f"{organizer.first_name} {organizer.last_name}".strip()
-                if getattr(organizer, "is_active", True) is False:
-                    organizer_is_deactivated = True
-                    organizer_status_badge = "Аккаунт деактивирован"
             data.organizer_name = organizer_name
-            data.organizer_is_deactivated = organizer_is_deactivated
-            data.organizer_status_badge = organizer_status_badge
         return data
     
     @property

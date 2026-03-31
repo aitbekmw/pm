@@ -3,7 +3,7 @@ import secrets
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete, func, or_, and_, update
+from sqlalchemy import select, delete, func, or_, and_
 
 from ldap3 import Server, Connection, ALL, NTLM
 
@@ -11,9 +11,6 @@ from src.core.config import settings
 from src.users.models import User, Session
 from src.companies.services import get_company_id_by_slug
 from src.core.exceptions import UnauthorizedDomainError
-from src.projects.models import Project, ProjectAccess
-from src.meetings.models import Meeting
-from src.notifications import services as notification_services
 
 
 def _ldap_authenticate(username: str, password: str) -> Optional[dict]:
@@ -286,135 +283,6 @@ async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
     """Получает пользователя по ID"""
     result = await db.execute(select(User).where(User.id == user_id))
     return result.scalars().first()
-
-
-async def deactivate_user_account(db: AsyncSession, user_id: int) -> bool:
-    """
-    Мягкое удаление пользователя:
-    - деактивация аккаунта (is_active=False),
-    - удаление сессий,
-    - переназначение владельца проектов, где пользователь был owner.
-    """
-    user_result = await db.execute(select(User).where(User.id == user_id))
-    user = user_result.scalars().first()
-    if not user:
-        return False
-
-    if not user.is_active:
-        return True
-
-    user.is_active = False
-
-    # Закрываем все активные сессии пользователя.
-    await db.execute(delete(Session).where(Session.user_id == user_id))
-
-    owner_project_rows = await db.execute(
-        select(Project.id, Project.name)
-        .where(
-            or_(
-                Project.created_by == user_id,
-                Project.id.in_(
-                    select(ProjectAccess.project_id).where(
-                        ProjectAccess.user_id == user_id,
-                        ProjectAccess.role == "Owner",
-                    )
-                ),
-            )
-        )
-    )
-    owner_projects = owner_project_rows.all()
-
-    for project_id, project_name in owner_projects:
-        candidate_rows = await db.execute(
-            select(
-                User.id,
-                func.count(Meeting.id).label("meetings_count"),
-            )
-            .join(ProjectAccess, ProjectAccess.user_id == User.id)
-            .join(
-                Meeting,
-                and_(Meeting.project_id == project_id, Meeting.organizer_id == User.id),
-                isouter=True,
-            )
-            .where(
-                ProjectAccess.project_id == project_id,
-                User.id != user_id,
-                User.is_active.is_(True),
-            )
-            .group_by(User.id)
-            .order_by(func.count(Meeting.id).desc(), User.id.asc())
-        )
-        candidate = candidate_rows.first()
-        if not candidate:
-            fallback_candidate_rows = await db.execute(
-                select(
-                    User.id,
-                    func.count(Meeting.id).label("meetings_count"),
-                )
-                .join(
-                    Meeting,
-                    and_(Meeting.project_id == project_id, Meeting.organizer_id == User.id),
-                    isouter=True,
-                )
-                .where(
-                    User.id != user_id,
-                    User.is_active.is_(True),
-                    User.company_id == user.company_id,
-                )
-                .group_by(User.id)
-                .order_by(func.count(Meeting.id).desc(), User.id.asc())
-            )
-            candidate = fallback_candidate_rows.first()
-
-        if not candidate:
-            continue
-
-        new_owner_id = candidate.id
-
-        await db.execute(
-            update(Project)
-            .where(Project.id == project_id)
-            .values(created_by=new_owner_id)
-        )
-
-        new_owner_access_row = await db.execute(
-            select(ProjectAccess).where(
-                ProjectAccess.project_id == project_id,
-                ProjectAccess.user_id == new_owner_id,
-            )
-        )
-        new_owner_access = new_owner_access_row.scalars().first()
-        if new_owner_access:
-            new_owner_access.role = "Owner"
-        else:
-            db.add(
-                ProjectAccess(
-                    project_id=project_id,
-                    user_id=new_owner_id,
-                    role="Owner",
-                    granted_at=datetime.now(timezone.utc),
-                )
-            )
-
-        await db.execute(
-            delete(ProjectAccess).where(
-                ProjectAccess.project_id == project_id,
-                ProjectAccess.user_id == user_id,
-                ProjectAccess.role == "Owner",
-            )
-        )
-
-        await notification_services.create_notification(
-            db=db,
-            user_id=new_owner_id,
-            type="project_owner_reassigned",
-            title="Назначен новый владелец проекта",
-            message=f"Вы назначены новым владельцем проекта {project_name}",
-            project_id=project_id,
-        )
-
-    await db.commit()
-    return True
 
 
 

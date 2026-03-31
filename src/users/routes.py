@@ -302,24 +302,6 @@ async def remove_push_token(
     await services.delete_push_token(db, current_user.id, payload.token)
 
 
-@router.delete(
-    "/me",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Удалить аккаунт пользователя",
-    description=(
-        "Мягкое удаление аккаунта: пользователь помечается как неактивный, "
-        "а если он владелец проектов — владельцы переназначаются автоматически."
-    ),
-)
-async def delete_my_account(
-    current_user: UserOut = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    deleted = await services.deactivate_user_account(db, current_user.id)
-    if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-
 @router.get("/me", response_model=UserOut)
 async def me(request: Request, db: AsyncSession = Depends(get_db)):
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
