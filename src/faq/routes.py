@@ -58,7 +58,10 @@ async def create_faq(
 ):
     """Создать новый FAQ (только для админов)"""
     check_mdigital_admin(current_user)
-    faq = await services.create_faq(db, data)
+    try:
+        faq = await services.create_faq(db, data)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     return faq
 
 @router.put("/{faq_id}", response_model=schemas.FAQOut)
@@ -70,7 +73,10 @@ async def update_faq(
 ):
     """Обновить существующий FAQ (только для админов)"""
     check_mdigital_admin(current_user)
-    faq = await services.update_faq(db, faq_id, data)
+    try:
+        faq = await services.update_faq(db, faq_id, data)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     if not faq:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="FAQ not found")
     return faq
