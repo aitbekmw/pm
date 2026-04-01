@@ -13,7 +13,7 @@ from src.users import services
 from src.users.schemas import LoginRequest, LoginResponse, UserOut, UserUpdateRole, UserList, PushTokenRegister, PushTokenDelete
 from src.core.config import settings
 from src.core.permissions import get_current_user
-from src.core.exceptions import UnauthorizedDomainError
+from src.core.exceptions import UnauthorizedDomainError, UserDeactivatedError
 from src.core.oauth import oauth
 
 
@@ -40,7 +40,11 @@ COOKIE_MAX_AGE = 60 * 60 * 24 * 30  # 30 days
 
 @router.post("/login", response_model=LoginResponse)
 async def login(payload: LoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
-    session_id = await services.login_with_ad(db, payload.username, payload.password)
+    try:
+        session_id = await services.login_with_ad(db, payload.username, payload.password)
+    except UserDeactivatedError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
     if not session_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
@@ -238,6 +242,9 @@ async def google_callback(
 
     try:
         session_id = await services.login_with_google(db, google_user)
+    except UserDeactivatedError:
+        logger.warning(f"[OAuth callback] user deactivated: {google_user.get('email')}")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     except UnauthorizedDomainError as e:
         logger.warning(f"[OAuth callback] unauthorized domain: {e}")
         return _error_redirect("unauthorized_domain", str(e))

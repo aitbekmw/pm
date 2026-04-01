@@ -10,7 +10,7 @@ from ldap3 import Server, Connection, ALL, NTLM
 from src.core.config import settings
 from src.users.models import User, Session
 from src.companies.services import get_company_id_by_slug
-from src.core.exceptions import UnauthorizedDomainError
+from src.core.exceptions import UnauthorizedDomainError, UserDeactivatedError
 
 
 def _ldap_authenticate(username: str, password: str) -> Optional[dict]:
@@ -141,7 +141,7 @@ async def login_with_ad(db: AsyncSession, username: str, password: str) -> Optio
 
     # Block login for deactivated users
     if not user.is_active:
-        return None
+        raise UserDeactivatedError()
 
     # Create session
     session_id = secrets.token_urlsafe(32)
@@ -442,7 +442,7 @@ async def login_with_google(db: AsyncSession, google_user: dict) -> Optional[str
 
     # Block login for deactivated users
     if not user.is_active:
-        return None
+        raise UserDeactivatedError()
 
     session_id = secrets.token_urlsafe(32)
     expires_at = datetime.now(timezone.utc) + timedelta(days=settings.SESSION_TTL_DAYS)
