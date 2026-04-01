@@ -377,9 +377,9 @@ async def deactivate_user(db: AsyncSession, user_id: int) -> bool:
                     await notification_services.create_notification(
                         db=db,
                         user_id=new_owner_id,
-                        type="added_to_project",  # Можно добавить новый тип если нужно, но этот подходит
+                        type="project_transferred",
                         title="Назначен новый владелец проекта",
-                        message=f"Вы назначены новым владельцем проекта {project.name}",
+                        message=f"Вы назначены новым владельцем проекта {project.name}, так как предыдущий владелец был деактивирован.",
                         project_id=project_id
                     )
 
