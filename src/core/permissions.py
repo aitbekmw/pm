@@ -26,22 +26,11 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
             detail="Invalid session"
         )
     
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User is inactive"
-        )
-    
     return user
 
 
 async def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:
     """Получить активного пользователя"""
-    if not current_user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Inactive user"
-        )
     return current_user
 
 

@@ -139,6 +139,10 @@ async def login_with_ad(db: AsyncSession, username: str, password: str) -> Optio
         if changed:
             await db.flush()
 
+    # Block login for deactivated users
+    if not user.is_active:
+        return None
+
     # Create session
     session_id = secrets.token_urlsafe(32)
     expires_at = datetime.now(timezone.utc) + timedelta(days=settings.SESSION_TTL_DAYS)
@@ -199,6 +203,7 @@ async def get_user_by_session(db: AsyncSession, session_id: str) -> Optional[Use
         .join(Session, Session.user_id == User.id)
         .where(Session.session_id == session_id)
         .where(Session.expires_at > now)
+        .where(User.is_active == True)
     )
     return result.scalars().first()
 
@@ -215,9 +220,11 @@ async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100, search: O
     # Получаем базовый запрос
     query = select(User)
 
-    # Фильтруем по компании.
+    # Фильтруем по компании и только активных пользователей.
     # Дополнительно включаем глобальных администраторов (company_id is NULL),
     # чтобы их можно было выбирать в участники проектов.
+    query = query.where(User.is_active == True)
+
     if company_id is not None:
         query = query.where(
             or_(
@@ -376,6 +383,9 @@ async def deactivate_user(db: AsyncSession, user_id: int) -> bool:
                         project_id=project_id
                     )
 
+    # 3. Удалить все сессии пользователя для мгновенного логаута
+    await db.execute(delete(Session).where(Session.user_id == user_id))
+
     await db.commit()
     return True
 
@@ -429,6 +439,10 @@ async def login_with_google(db: AsyncSession, google_user: dict) -> Optional[str
 
         if changed:
             await db.flush()
+
+    # Block login for deactivated users
+    if not user.is_active:
+        return None
 
     session_id = secrets.token_urlsafe(32)
     expires_at = datetime.now(timezone.utc) + timedelta(days=settings.SESSION_TTL_DAYS)
