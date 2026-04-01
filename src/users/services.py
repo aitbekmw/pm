@@ -287,8 +287,8 @@ async def update_user_role(db: AsyncSession, user_id: int, role: str, current_us
 
 
 async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
-    """Получает пользователя по ID"""
-    result = await db.execute(select(User).where(User.id == user_id))
+    """Получает пользователя по ID (только активных)"""
+    result = await db.execute(select(User).where(User.id == user_id, User.is_active == True))
     return result.scalars().first()
 
 
