@@ -10,6 +10,7 @@ class OrganizerInfo(BaseModel):
     ad_account: str
     first_name: str
     last_name: str
+    status: str = "active"
     
     model_config = ConfigDict(from_attributes=True)
     
@@ -54,11 +55,13 @@ class MeetingOut(BaseModel):
     title: str
     project_id: Optional[int]
     organizer_name: Optional[str] = None
+    organizer_status: Optional[str] = None
     meeting_date: datetime
     duration: Optional[int] = None  # Длительность в секундах
     importance: str
     audio_file_path: Optional[str]
     audio_file_size: Optional[int]
+    audio_content_type: Optional[str] = None
     pdf_file_path: Optional[str] = None
     comments: Optional[str]
     created_at: Optional[datetime]
@@ -73,32 +76,42 @@ class MeetingOut(BaseModel):
         if isinstance(data, dict):
             # Получаем имя организатора
             organizer_name = None
+            organizer_status = None
             if 'organizer' in data and data['organizer']:
                 organizer = data['organizer']
                 if hasattr(organizer, 'first_name') and hasattr(organizer, 'last_name'):
                     organizer_name = f"{organizer.first_name} {organizer.last_name}".strip()
+                if hasattr(organizer, 'status'):
+                    organizer_status = organizer.status
             elif 'organizer_id' in data and data['organizer_id']:
                 # Если organizer не загружен, но есть organizer_id, оставляем None
                 pass
             data['organizer_name'] = organizer_name
+            data['organizer_status'] = organizer_status
             # Удаляем organizer_id и organizer из данных, чтобы они не попадали в ответ
             data.pop('organizer_id', None)
             data.pop('organizer', None)
         elif hasattr(data, 'organizer'):
             # Обрабатываем объект SQLAlchemy
             organizer_name = None
+            organizer_status = None
             if data.organizer:
                 organizer = data.organizer
                 if hasattr(organizer, 'first_name') and hasattr(organizer, 'last_name'):
                     organizer_name = f"{organizer.first_name} {organizer.last_name}".strip()
+                if hasattr(organizer, 'status'):
+                    organizer_status = organizer.status
             data.organizer_name = organizer_name
+            data.organizer_status = organizer_status
         return data
     
     @field_serializer('audio_file_path')
     def serialize_audio_file_path(self, value: Optional[str], _info):
-        """Генерирует временную ссылку на аудиофайл через s3 напрямую, указывая верный Content-Type"""
+        """Генерирует временную ссылку на аудиофайл через s3, указывая верный Content-Type"""
         if value:
-            return storage.generate_presigned_url(value)
+            # Fix №5 — передаём кешированный content_type из DB
+            content_type = getattr(self, 'audio_content_type', None)
+            return storage.generate_presigned_url(value, content_type=content_type)
         return None
     
     @field_serializer('pdf_file_path')
@@ -114,6 +127,7 @@ class MeetingListOut(BaseModel):
     title: str
     project_id: Optional[int]
     organizer_name: Optional[str] = None
+    organizer_status: Optional[str] = None
     meeting_date: datetime
     duration: Optional[int] = None  # Длительность в секундах
     importance: str
@@ -129,25 +143,33 @@ class MeetingListOut(BaseModel):
         if isinstance(data, dict):
             # Получаем имя организатора
             organizer_name = None
+            organizer_status = None
             if 'organizer' in data and data['organizer']:
                 organizer = data['organizer']
                 if hasattr(organizer, 'first_name') and hasattr(organizer, 'last_name'):
                     organizer_name = f"{organizer.first_name} {organizer.last_name}".strip()
+                if hasattr(organizer, 'status'):
+                    organizer_status = organizer.status
             elif 'organizer_id' in data and data['organizer_id']:
                 # Если organizer не загружен, но есть organizer_id, оставляем None
                 pass
             data['organizer_name'] = organizer_name
+            data['organizer_status'] = organizer_status
             # Удаляем organizer_id и organizer из данных, чтобы они не попадали в ответ
             data.pop('organizer_id', None)
             data.pop('organizer', None)
         elif hasattr(data, 'organizer'):
             # Обрабатываем объект SQLAlchemy
             organizer_name = None
+            organizer_status = None
             if data.organizer:
                 organizer = data.organizer
                 if hasattr(organizer, 'first_name') and hasattr(organizer, 'last_name'):
                     organizer_name = f"{organizer.first_name} {organizer.last_name}".strip()
+                if hasattr(organizer, 'status'):
+                    organizer_status = organizer.status
             data.organizer_name = organizer_name
+            data.organizer_status = organizer_status
         return data
 
 

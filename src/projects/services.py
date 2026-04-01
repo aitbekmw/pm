@@ -5,12 +5,15 @@ from datetime import datetime, timezone
 from typing import Optional
 import io
 import uuid
+import logging
 
 from src.projects.models import Project, ProjectAccess
 from src.projects.schemas import ProjectCreate, ProjectUpdate
 from src.projects import selectors
 from src.users.models import User
 from src.core.storage import storage
+
+logger = logging.getLogger(__name__)
 
 
 async def create_project(
@@ -76,7 +79,9 @@ async def create_project(
             users_to_notify.append(user_data.id)
 
     await db.commit()
-    await db.refresh(project)
+
+    result = await db.execute(select(Project).where(Project.id == project.id))
+    project = result.scalars().first()
     
     # Загрузить обложку если она передана как файл
     if cover_bytes and cover_filename:
@@ -107,17 +112,41 @@ async def update_project(
     project_id: int, 
     data: ProjectUpdate
 ) -> Optional[Project]:
-    """Обновить проект"""
+    """Обновить проект
+    
+    При обновлении cover:
+    - Если новый cover отличается от старого и старый был загруженный (содержит '/'), удаляется из S3
+    - Дефолтные cover (без '/') не удаляются
+    """
     project = await selectors.get_project_by_id(db, project_id)
     if not project:
         return None
     
     update_data = data.model_dump(exclude_unset=True)
+    
+    # Специальная обработка для cover
+    if 'cover' in update_data:
+        new_cover = update_data['cover']
+        old_cover = project.cover
+        
+        # Если cover действительно изменился и старый cover был загруженный (не дефолтный)
+        if new_cover != old_cover and old_cover and '/' in old_cover:
+            # Удаляем старое изображение из S3
+            try:
+                await storage.async_delete_file(old_cover)
+            except Exception as e:
+                logger.warning(f"Failed to delete old cover {old_cover}: {e}")
+    
+    # Обновляем все поля
     for field, value in update_data.items():
         setattr(project, field, value)
     
     await db.commit()
-    await db.refresh(project)
+    
+    # Пересчитываем проект из БД чтобы гарантировать получение актуального значения
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    project = result.scalars().first()
+    
     return project
 
 
@@ -256,7 +285,7 @@ async def upload_project_cover(
 
     # Удалить старую обложку если существует
     if project.cover:
-        storage.delete_file(project.cover)
+        await storage.async_delete_file(project.cover)
 
     # Генерируем уникальное имя для файла
     file_ext = original_filename.rsplit('.', 1)[-1] if '.' in original_filename else 'jpg'
@@ -278,7 +307,7 @@ async def upload_project_cover(
 
     # Загружаем файл
     file_obj = io.BytesIO(file_bytes)
-    uploaded_path = storage.upload_file(file_obj, object_name, content_type=content_type)
+    uploaded_path, _ = await storage.async_upload_file(file_obj, object_name, content_type=content_type)
 
     if not uploaded_path:
         return None
@@ -286,7 +315,9 @@ async def upload_project_cover(
     # Обновляем проект с путем к обложке
     project.cover = uploaded_path
     await db.commit()
-    await db.refresh(project)
+    
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    project = result.scalars().first()
 
     return project
 
@@ -308,7 +339,7 @@ async def delete_project_cover(db: AsyncSession, project_id: int) -> Optional[Pr
 
     # Удалить файл из S3 если существует и это не дефолтная обложка
     if project.cover and '/' in project.cover:
-        storage.delete_file(project.cover)
+        await storage.async_delete_file(project.cover)
     
     project.cover = None
     await db.commit()

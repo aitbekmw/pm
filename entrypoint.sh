@@ -30,4 +30,4 @@ alembic upgrade head
 
 # Запуск API сервера
 echo "Запуск API сервера на порту ${PORT:-8000}..."
-exec uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}
+exec uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers

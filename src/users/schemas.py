@@ -19,6 +19,7 @@ class UserOut(BaseModel):
     last_name: str
     role: str
     is_active: bool
+    status: str = "active"
     company_id: Optional[int] = None
     created_at: Optional[datetime]
     updated_at: Optional[datetime]

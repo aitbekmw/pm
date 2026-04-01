@@ -9,7 +9,7 @@ from src.companies.models import Company
 from src.users.models import User
 from src.projects.models import Project
 from src.meetings.models import Meeting
-from src.faq.models import FAQ
+from src.faq.models import FAQ, FAQCategory
 from src.core.admin_auth import AdminAuthenticationBackend
 from starlette.middleware.sessions import SessionMiddleware
 from wtforms import SelectField
@@ -24,6 +24,12 @@ USER_ROLE_CHOICES = [
     ("Designer", "Designer"),
     ("QA", "QA"),
 ]
+
+def range_choices(start: int, end: int):
+    return [(i, str(i)) for i in range(start, end + 1)]
+
+MAX_FAQ_CATEGORIES = 15
+MAX_FAQS_PER_CATEGORY = 30
 
 
 class BaseAdmin(ModelView):
@@ -225,20 +231,66 @@ class MeetingAdmin(RestrictedModelView, model=Meeting):
     ]
 
 
+class FAQCategoryAdmin(RestrictedModelView, model=FAQCategory):
+    name = "Категория FAQ"
+    name_plural = "Категории FAQ"
+    icon = "fa-solid fa-list"
+
+    column_list = [FAQCategory.name, FAQCategory.order, FAQCategory.is_active, FAQCategory.created_at]
+    column_details_list = [
+        FAQCategory.name, FAQCategory.order, FAQCategory.is_active, FAQCategory.created_at, FAQCategory.updated_at
+    ]
+    column_searchable_list = [FAQCategory.name]
+    column_sortable_list = [FAQCategory.order, FAQCategory.is_active, FAQCategory.created_at]
+
+    column_labels = {
+        FAQCategory.name: "Название категории",
+        FAQCategory.order: "Порядок",
+        FAQCategory.is_active: "Активен",
+        FAQCategory.created_at: "Дата создания",
+        FAQCategory.updated_at: "Дата обновления",
+    }
+
+    can_create = True
+    can_edit = True
+    can_delete = True
+    can_view_details = True
+    page_size = 25
+
+    form_columns = [
+        FAQCategory.name,
+        FAQCategory.order,
+        FAQCategory.is_active,
+    ]
+
+    form_overrides = {
+        "order": SelectField,
+    }
+
+    form_args = {
+        "order": {
+            "choices": range_choices(1, MAX_FAQ_CATEGORIES),
+            "coerce": int,
+        }
+    }
+
+
 class FAQAdmin(RestrictedModelView, model=FAQ):
     name = "FAQ (Ответы на вопросы)"
     name_plural = "FAQ"
     icon = "fa-solid fa-circle-question"
 
-    column_list = [FAQ.question, FAQ.order, FAQ.is_active, FAQ.created_at]
+    column_list = [FAQ.category, FAQ.question, FAQ.order, FAQ.is_active, FAQ.created_at]
     column_details_list = [
-        FAQ.question, FAQ.answer, FAQ.order, FAQ.is_active, 
+        FAQ.category, FAQ.question, FAQ.answer, FAQ.order, FAQ.is_active, 
         FAQ.created_at, FAQ.updated_at
     ]
-    column_searchable_list = [FAQ.question, FAQ.answer]
-    column_sortable_list = [FAQ.order, FAQ.is_active, FAQ.created_at]
+    column_searchable_list = [FAQ.question, FAQ.answer, "category.name"]
+    column_sortable_list = [FAQ.category, FAQ.order, FAQ.is_active, FAQ.created_at]
 
     column_labels = {
+        FAQ.category: "Категория",
+        "category.name": "Категория",
         FAQ.question: "Вопрос",
         FAQ.answer: "Ответ",
         FAQ.order: "Порядок",
@@ -254,11 +306,23 @@ class FAQAdmin(RestrictedModelView, model=FAQ):
     page_size = 25
 
     form_columns = [
+        FAQ.category,
         FAQ.question,
         FAQ.answer,
         FAQ.order,
         FAQ.is_active,
     ]
+
+    form_overrides = {
+        "order": SelectField,
+    }
+
+    form_args = {
+        "order": {
+            "choices": range_choices(1, MAX_FAQS_PER_CATEGORY),
+            "coerce": int,
+        }
+    }
 
 
 class AnalyticsView(BaseView):
@@ -367,6 +431,7 @@ def setup_admin(app):
     admin.add_view(UserAdmin)
     admin.add_view(ProjectAdmin)
     admin.add_view(MeetingAdmin)
+    admin.add_view(FAQCategoryAdmin)
     admin.add_view(FAQAdmin)
     # admin.add_view(MeetingProcessingAdmin)
     # admin.add_view(TranscriptAdmin)

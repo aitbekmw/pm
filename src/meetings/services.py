@@ -4,6 +4,11 @@ from datetime import datetime, timezone
 from typing import Optional, BinaryIO
 import uuid
 import io
+import os
+import shutil
+import tempfile
+import asyncio
+from fastapi import UploadFile
 
 from src.meetings.models import (
     Meeting, Transcript, Summary, Note, ActionItem, MeetingProcessing
@@ -20,37 +25,48 @@ async def create_meeting(
     db: AsyncSession,
     data: MeetingCreate,
     user_id: int,
-    audio_file: Optional[BinaryIO] = None,
-    audio_filename: Optional[str] = None
+    audio_file: Optional[UploadFile] = None
 ) -> Meeting:
     """Создать новую встречу"""
     # Генерировать уникальное имя файла для S3
     audio_path = None
     audio_size = None
+    audio_content_type = None
     duration_seconds = None
     user = None  # Initialize user variable
     project = None  # Initialize project variable
 
     if audio_file:
+        audio_filename = audio_file.filename
         file_extension = audio_filename.split('.')[-1] if audio_filename else 'mp3'
         audio_path = f"meetings/{uuid.uuid4()}.{file_extension}"
         
-        # Загрузить в S3
-        audio_file.seek(0, 2)  # Перейти в конец файла
-        audio_size = audio_file.tell()  # Получить размер
-        audio_file.seek(0)  # Вернуться в начало
-        
-        # Получить длительность аудио
-        audio_bytes = audio_file.read()
-        audio_duration_seconds = storage.get_audio_duration(audio_bytes)
-        if audio_duration_seconds:
-            duration_seconds = audio_duration_seconds
-        
-        # Вернуться в начало для загрузки
-        audio_file = io.BytesIO(audio_bytes)
-        final_audio_path = storage.upload_file(audio_file, audio_path)
-        if final_audio_path:
-            audio_path = final_audio_path
+        # Сохраняем во временный файл для определения длительности и загрузки
+        # Это предотвращает OOM, так как файл читается чанками
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_extension}") as tmp:
+            tmp_path = tmp.name
+            try:
+                # Стримим из UploadFile во временный файл
+                audio_file.file.seek(0)
+                shutil.copyfileobj(audio_file.file, tmp)
+                tmp.flush()
+                audio_size = os.path.getsize(tmp_path)
+                
+                # Получаем длительность (в отдельном потоке, так как ffprobe блокирует)
+                duration_seconds = await asyncio.to_thread(
+                    storage.get_audio_duration_from_path, tmp_path
+                )
+                
+                # Загружаем в S3 (в отдельном потоке)
+                with open(tmp_path, "rb") as f:
+                    final_audio_path, audio_content_type = await storage.async_upload_file(
+                        f, audio_path
+                    )
+                    if final_audio_path:
+                        audio_path = final_audio_path
+            finally:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
     
     # Если duration передан из фронта, используем его (приоритет фронта)
     if data.duration is not None:
@@ -88,7 +104,8 @@ async def create_meeting(
         comments=data.comments,
         notes=data.notes,
         audio_file_path=audio_path,
-        audio_file_size=audio_size
+        audio_file_size=audio_size,
+        audio_content_type=audio_content_type if audio_file else None,
     )
     
     db.add(meeting)
@@ -178,7 +195,7 @@ async def delete_meeting(db: AsyncSession, meeting_id: int) -> bool:
     
     # Удалить аудио из S3
     if meeting.audio_file_path:
-        storage.delete_file(meeting.audio_file_path)
+        await storage.async_delete_file(meeting.audio_file_path)
     
     await db.delete(meeting)
     await db.commit()

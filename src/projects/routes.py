@@ -3,8 +3,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from datetime import datetime
 
+import json
 from src.db.deps import get_db
 from src.users.models import User
+from src.users import services as user_services
 from src.core.permissions import get_current_user, require_manager_or_admin
 from src.projects import schemas, services, selectors
 from src.meetings import schemas as meeting_schemas, selectors as meeting_selectors
@@ -16,43 +18,98 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 @router.post("/", response_model=schemas.ProjectOut, status_code=status.HTTP_201_CREATED)
 async def create_project(
-    data: schemas.ProjectCreate,
+    name: str = Form(...),
+    description: Optional[str] = Form(None),
+    users: Optional[str] = Form(None),
+    confluence_data: Optional[str] = Form(None),
+    jira_data: Optional[str] = Form(None),
+    cover: Optional[UploadFile] = File(None),
+    cover_name: Optional[str] = Form(None),
     current_user: User = Depends(require_manager_or_admin),
     db: AsyncSession = Depends(get_db)
 ):
     """Создать новый проект (только Manager или Admin)
     
-    **Параметры:**
+    **Параметры (form-data):**
     - name: название проекта (обязательно)
     - description: описание (опционально)
-    - confluence_data: JSON данные Confluence (опционально)
-    - jira_data: JSON данные Jira (опционально)
-    - users: JSON массив пользователей [{"id": 1, "role": "Manager"}] (опционально)
-    - cover_name: строка с названием дефолтной иконки (default-blue, default-red и т.д.) - опционально
+    - cover: изображение для обложки (опционально, jpg/png/gif/webp)
+    - cover_name: имя дефолтной обложки (опционально, используется если cover не передан)
     
     **Отправка:**
-    Используйте application/json
+    Используйте multipart/form-data
     """
-    if data.cover_name:
-        # Используется дефолтная иконка
-        if '/' in data.cover_name or '\\' in data.cover_name or '..' in data.cover_name:
+    # Проверить размер файла если передан
+    file_bytes = None
+    if cover:
+        file_bytes = await cover.read()
+        if len(file_bytes) > 10 * 1024 * 1024:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid cover name. Must not contain slashes or special sequences"
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="File size too large. Maximum size is 10MB"
             )
         
-        if not data.cover_name.replace('-', '').replace('_', '').isalnum():
+        # Проверить формат файла
+        allowed_formats = {'image/jpeg', 'image/png', 'image/gif', 'image/webp'}
+        if cover.content_type not in allowed_formats:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid cover name. Only letters, numbers, hyphens and underscores allowed"
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Unsupported file format. Allowed: JPEG, PNG, GIF, WebP"
             )
+    
+    # Parse JSON strings if provided
+    parsed_users = None
+    if users:
+        try:
+            users_list = json.loads(users)
+            parsed_users = [schemas.ProjectUserCreate(**u) for u in users_list]
+            
+            # Validate that all users are active
+            for u in parsed_users:
+                active_user = await user_services.get_user_by_id(db, u.id)
+                if not active_user:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"User with ID {u.id} is deactivated or not found"
+                    )
+        except (ValueError, TypeError) as e:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid users format: {str(e)}"
+            )
+
+    parsed_confluence = None
+    if confluence_data:
+        try:
+            parsed_confluence = json.loads(confluence_data)
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid confluence_data format")
+
+    parsed_jira = None
+    if jira_data:
+        try:
+            parsed_jira = json.loads(jira_data)
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid jira_data format")
+
+    # Создаём объект ProjectCreate
+    project_data = schemas.ProjectCreate(
+        name=name,
+        description=description,
+        confluence_data=parsed_confluence,
+        jira_data=parsed_jira,
+        users=parsed_users,
+        cover_name=cover_name
+    )
     
     # Создаем проект с обложкой если она есть
     project = await services.create_project(
         db=db, 
-        data=data, 
+        data=project_data, 
         user_id=current_user.id,
-        cover_default=data.cover_name
+        cover_bytes=file_bytes,
+        cover_filename=cover.filename if cover else None,
+        cover_default=project_data.cover_name
     )
     
     # Добавить счетчики
@@ -242,11 +299,24 @@ async def get_project(
 @router.put("/{project_id}", response_model=schemas.ProjectOut)
 async def update_project(
     project_id: int,
-    data: schemas.ProjectUpdate,
+    name: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    cover: Optional[UploadFile] = File(None),
+    cover_name: Optional[str] = Form(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Обновить проект (только Admin или Manager владелец проекта)"""
+    """Обновить проект (только Admin или Manager владелец проекта)
+    
+    **Параметры (form-data):**
+    - name: название проекта (опционально)
+    - description: описание (опционально)
+    - cover: новое изображение для обложки (опционально)
+    - cover_name: имя дефолтной обложки (опционально, используется если cover не передан)
+    
+    **Отправка:**
+    Используйте multipart/form-data
+    """
     # Проверить права на редактирование
     can_edit = await selectors.check_user_can_edit_project(db, current_user.id, current_user.role, project_id)
     if not can_edit:
@@ -255,12 +325,54 @@ async def update_project(
             detail="Access denied. Only Admin or Manager project owner can edit project"
         )
     
-    project = await services.update_project(db, project_id, data)
+    # Проверить размер файла если передан
+    file_bytes = None
+    if cover:
+        file_bytes = await cover.read()
+        if len(file_bytes) > 10 * 1024 * 1024:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="File size too large. Maximum size is 10MB"
+            )
+        
+        # Проверить формат файла
+        allowed_formats = {'image/jpeg', 'image/png', 'image/gif', 'image/webp'}
+        if cover.content_type not in allowed_formats:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Unsupported file format. Allowed: JPEG, PNG, GIF, WebP"
+            )
+    
+    # Определяем какой cover использовать: либо новое имя дефолтной обложки, либо None
+    new_cover = cover_name if cover_name and not file_bytes else None
+    
+    # Создаём объект ProjectUpdate с переданными данными
+    update_data = schemas.ProjectUpdate(
+        name=name,
+        description=description,
+        confluence_data=None,
+        jira_data=None,
+        cover=new_cover  # Устанавливаем cover только если передана дефолтная обложка
+    )
+    
+    # Обновляем проект
+    project = await services.update_project(db, project_id, update_data)
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
         )
+    
+    # Если файл передан, загружаем его (это перезапишет cover установленный выше)
+    if file_bytes:
+        project = await services.upload_project_cover(
+            db, project_id, file_bytes, cover.filename or "cover.jpg"
+        )
+        if not project:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to upload cover"
+            )
     
     members_count = await selectors.get_project_members_count(db, project.id)
     meetings_count = await selectors.get_project_meetings_count(db, project.id)

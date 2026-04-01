@@ -9,16 +9,31 @@ from src.faq import schemas, services
 
 router = APIRouter(prefix="/faq", tags=["faq"])
 
-@router.get("/", response_model=List[schemas.FAQOut])
+@router.get("/", response_model=List[schemas.FAQCategoryPublicOut])
 async def get_faqs(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Получить все активные FAQ. Доступно всем авторизованным пользователям.
+    Получить все активные FAQ, сгруппированные по категориям. Доступно всем авторизованным пользователям.
     """
-    faqs = await services.get_faqs(db, include_inactive=False)
-    return faqs
+    categories = await services.get_faq_categories(db, include_inactive=False)
+    
+    result = []
+    for cat in categories:
+        result.append({
+            "id": cat.id,
+            "name": cat.name,
+            "items": [
+                {
+                    "id": faq.id,
+                    "question": faq.question,
+                    "answer": faq.answer,
+                }
+                for faq in cat.faqs
+            ],
+        })
+    return result
 
 # Если управление происходит через SQLAdmin, дополнительные (POST/PUT/DELETE) эндпоинты 
 # для API можно опустить или добавить с проверкой прав, как показано ниже.
@@ -43,7 +58,10 @@ async def create_faq(
 ):
     """Создать новый FAQ (только для админов)"""
     check_mdigital_admin(current_user)
-    faq = await services.create_faq(db, data)
+    try:
+        faq = await services.create_faq(db, data)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     return faq
 
 @router.put("/{faq_id}", response_model=schemas.FAQOut)
@@ -55,7 +73,10 @@ async def update_faq(
 ):
     """Обновить существующий FAQ (только для админов)"""
     check_mdigital_admin(current_user)
-    faq = await services.update_faq(db, faq_id, data)
+    try:
+        faq = await services.update_faq(db, faq_id, data)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     if not faq:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="FAQ not found")
     return faq

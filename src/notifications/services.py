@@ -59,7 +59,7 @@ async def _send_push_for_notification(
         data: dict = {}
         if type == "new_meeting" and meeting_id:
             data = {"meet_id": meeting_id}
-        elif type == "added_to_project" and project_id:
+        elif type in ("added_to_project", "project_transferred") and project_id:
             data = {"project_id": project_id}
 
         for token in tokens:
