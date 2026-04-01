@@ -3,8 +3,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from datetime import datetime
 
+import json
 from src.db.deps import get_db
 from src.users.models import User
+from src.users import services as user_services
 from src.core.permissions import get_current_user, require_manager_or_admin
 from src.projects import schemas, services, selectors
 from src.meetings import schemas as meeting_schemas, selectors as meeting_selectors
@@ -18,6 +20,9 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 async def create_project(
     name: str = Form(...),
     description: Optional[str] = Form(None),
+    users: Optional[str] = Form(None),
+    confluence_data: Optional[str] = Form(None),
+    jira_data: Optional[str] = Form(None),
     cover: Optional[UploadFile] = File(None),
     cover_name: Optional[str] = Form(None),
     current_user: User = Depends(require_manager_or_admin),
@@ -52,13 +57,48 @@ async def create_project(
                 detail="Unsupported file format. Allowed: JPEG, PNG, GIF, WebP"
             )
     
+    # Parse JSON strings if provided
+    parsed_users = None
+    if users:
+        try:
+            users_list = json.loads(users)
+            parsed_users = [schemas.ProjectUserCreate(**u) for u in users_list]
+            
+            # Validate that all users are active
+            for u in parsed_users:
+                active_user = await user_services.get_user_by_id(db, u.id)
+                if not active_user:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"User with ID {u.id} is deactivated or not found"
+                    )
+        except (ValueError, TypeError) as e:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid users format: {str(e)}"
+            )
+
+    parsed_confluence = None
+    if confluence_data:
+        try:
+            parsed_confluence = json.loads(confluence_data)
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid confluence_data format")
+
+    parsed_jira = None
+    if jira_data:
+        try:
+            parsed_jira = json.loads(jira_data)
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid jira_data format")
+
     # Создаём объект ProjectCreate
     project_data = schemas.ProjectCreate(
         name=name,
         description=description,
-        confluence_data=None,
-        jira_data=None,
-        users=None,
+        confluence_data=parsed_confluence,
+        jira_data=parsed_jira,
+        users=parsed_users,
         cover_name=cover_name
     )
     
