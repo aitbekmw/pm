@@ -3,7 +3,9 @@ import io
 import json
 import logging
 import mimetypes
+import os
 import subprocess
+import tempfile
 from typing import Optional, BinaryIO
 
 import boto3
@@ -128,43 +130,33 @@ def validate_audio_mime(mime: str) -> bool:
 # FFmpeg utilities (Fix №1 — замена librosa)
 # ---------------------------------------------------------------------------
 
-def _ffmpeg_convert_to_wav(audio_bytes: bytes) -> bytes:
-    """Конвертирует аудио в WAV 16kHz mono через ffmpeg subprocess.
-
-    Streaming через pipe — не грузит весь файл в RAM как float32.
-    Потребление памяти: ~1x размер входного файла (vs ~10x у librosa).
-    """
+def _ffmpeg_convert_to_wav(input_path: str, output_path: str):
+    """Конвертирует аудио в WAV 16kHz mono через ffmpeg subprocess."""
     try:
         result = subprocess.run(
             [
                 "ffmpeg",
-                "-i", "pipe:0",         # stdin input
+                "-i", input_path,        # input file path
                 "-ar", "16000",          # sample rate
                 "-ac", "1",              # mono
                 "-f", "wav",             # output format
                 "-y",                    # overwrite
-                "pipe:1",               # stdout output
+                output_path,             # output file path
             ],
-            input=audio_bytes,
             capture_output=True,
-            timeout=300,                 # 5 min timeout
+            timeout=600,                 # 10 min timeout
         )
         if result.returncode != 0:
             stderr = result.stderr.decode(errors="replace")[-500:]
             raise RuntimeError(f"ffmpeg exit code {result.returncode}: {stderr}")
-        return result.stdout
     except FileNotFoundError:
         raise RuntimeError("ffmpeg not found. Install: apt install ffmpeg")
     except subprocess.TimeoutExpired:
-        raise RuntimeError("ffmpeg conversion timed out (>300s)")
+        raise RuntimeError("ffmpeg conversion timed out (>600s)")
 
 
-def _ffmpeg_get_duration(audio_bytes: bytes) -> Optional[int]:
-    """Получить длительность аудио в секундах через ffprobe.
-
-    Не декодирует файл — только читает метаданные контейнера.
-    Быстро: ~10-50ms vs ~500-5000ms у librosa.
-    """
+def _ffmpeg_get_duration_from_path(file_path: str) -> Optional[int]:
+    """Получить длительность аудио в секундах через ffprobe из файла."""
     try:
         result = subprocess.run(
             [
@@ -172,9 +164,8 @@ def _ffmpeg_get_duration(audio_bytes: bytes) -> Optional[int]:
                 "-v", "quiet",
                 "-print_format", "json",
                 "-show_format",
-                "pipe:0",
+                file_path,
             ],
-            input=audio_bytes,
             capture_output=True,
             timeout=30,
         )
@@ -203,49 +194,61 @@ class S3Storage:
 
         # Нормализуем endpoint URL (убираем trailing slash, если есть)
         endpoint_url = settings.S3_ENDPOINT_URL.rstrip('/')
+        public_url = settings.S3_PUBLIC_URL.rstrip('/')
 
-        # Логируем длину ключей (без самих значений для безопасности)
+        # Логируем длину ключей
         logger.info(
-            f"S3 initialization: endpoint={endpoint_url}, "
+            f"S3 initialization: internal_endpoint={endpoint_url}, public_endpoint={public_url}, "
             f"access_key_length={len(access_key)}, secret_key_length={len(secret_key)}, "
             f"bucket={settings.S3_BUCKET_NAME}, region={settings.S3_REGION}"
         )
 
         # Для MinIO требуется path-style addressing
-        is_minio = (
-            'minio' in endpoint_url.lower()
-            or endpoint_url.startswith('http://10.')
-            or endpoint_url.startswith('http://192.168.')
-            or endpoint_url.startswith('http://172.')
-            or '/minio' in endpoint_url.lower()
+        # Внутренний клиент (для закачки/удаления)
+        internal_is_minio = (
+            'minio' in endpoint_url.lower() or '/minio' in endpoint_url.lower() or '172.' in endpoint_url or '127.' in endpoint_url
         )
-
-        if is_minio:
-            s3_config = Config(
-                signature_version='s3v4',
-                s3={'addressing_style': 'path'}
-            )
-            logger.info("Using MinIO configuration with path-style addressing")
-        else:
-            s3_config = Config(signature_version='s3v4')
-
+        internal_config = Config(
+            signature_version='s3v4',
+            s3={'addressing_style': 'path'} if internal_is_minio else {}
+        )
+        
         self.s3_client = boto3.client(
             's3',
             endpoint_url=endpoint_url,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
             region_name=settings.S3_REGION,
-            config=s3_config
+            config=internal_config
         )
+
+        # Публичный клиент (для пресайн ссылок)
+        public_is_minio = (
+            'minio' in public_url.lower() or '/minio' in public_url.lower()
+        )
+        public_config = Config(
+            signature_version='s3v4',
+            s3={'addressing_style': 'path'} if public_is_minio else {}
+        )
+        
+        self.s3_public_client = boto3.client(
+            's3',
+            endpoint_url=public_url,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            region_name=settings.S3_REGION,
+            config=public_config
+        )
+
         self.bucket_name = settings.S3_BUCKET_NAME
 
     # ------------------------------------------------------------------
     # Audio helpers
     # ------------------------------------------------------------------
 
-    def get_audio_duration(self, audio_bytes: bytes) -> Optional[int]:
+    def get_audio_duration_from_path(self, file_path: str) -> Optional[int]:
         """Получить длительность аудио в секундах через ffprobe."""
-        return _ffmpeg_get_duration(audio_bytes)
+        return _ffmpeg_get_duration_from_path(file_path)
 
     # ------------------------------------------------------------------
     # Sync S3 operations (used by ARQ worker)
@@ -257,113 +260,52 @@ class S3Storage:
         object_name: str,
         content_type: Optional[str] = None,
     ) -> tuple[Optional[str], Optional[str]]:
-        """Загрузить файл в S3 и вернуть (финальный_путь, content_type).
-
-        Fix №3: сразу читаем bytes — single source of truth.
-        Fix №4: валидируем MIME для аудио файлов.
-        """
+        """Загрузить файл в S3 и вернуть (финальный_путь, content_type)."""
         try:
-            # Fix №3 — Сразу нормализуем в bytes, один source of truth
+            # Читаем только начало для детекции MIME
             file_obj.seek(0)
-            data = file_obj.read()
+            sample = file_obj.read(8192)
+            file_obj.seek(0)
+
+            if not content_type:
+                content_type = detect_audio_mime(sample, filename=object_name)
 
             if object_name.startswith("meetings/"):
-                # Определяем MIME по содержимому
-                if not content_type:
-                    content_type = detect_audio_mime(data, filename=object_name)
-
-                # Fix №4 — Валидация: только аудио-форматы
                 if not validate_audio_mime(content_type):
-                    logger.error(
-                        f"Rejected non-audio file: {object_name} "
-                        f"(detected MIME: {content_type})"
-                    )
-                    raise ValueError(
-                        f"Invalid audio format: {content_type}. "
-                        f"Expected audio/* MIME type."
-                    )
+                    logger.error(f"Rejected non-audio file: {object_name} (MIME: {content_type})")
+                    raise ValueError(f"Invalid audio format: {content_type}")
 
-                # Конвертация в WAV через ffmpeg (Fix №1)
-                if len(data) == 0:
-                    logger.warning(f"Audio file is empty: {object_name}")
-                elif len(data) > 100 * 1024 * 1024:  # 100MB limit
-                    logger.warning(
-                        f"Audio too large ({len(data)} bytes), "
-                        f"skipping conversion: {object_name}"
-                    )
-                else:
-                    try:
-                        logger.info(
-                            f"Converting audio to WAV via ffmpeg: "
-                            f"{object_name} ({len(data)} bytes)"
-                        )
-                        wav_data = _ffmpeg_convert_to_wav(data)
-                        data = wav_data
-                        content_type = "audio/wav"
-                        object_name = object_name.rsplit('.', 1)[0] + '.wav'
-                        logger.info(f"Audio conversion successful: {object_name}")
-                    except Exception as e:
-                        logger.warning(
-                            f"ffmpeg conversion failed, uploading original: {e}"
-                        )
-                        # content_type уже определён выше через detect_audio_mime
-            else:
-                # Не-аудио файлы
-                if not content_type:
-                    content_type = detect_audio_mime(data, filename=object_name)
-
-            # Финальный fallback
-            if not content_type:
-                content_type = "application/octet-stream"
-
-            # Upload — единственное создание BytesIO
-            upload_buffer = io.BytesIO(data)
+            # Загружаем стримом через upload_fileobj
             self.s3_client.upload_fileobj(
-                upload_buffer,
+                file_obj,
                 self.bucket_name,
                 object_name,
                 ExtraArgs={'ContentType': content_type}
             )
-            logger.info(
-                f"File uploaded to S3: {object_name} "
-                f"(Content-Type: {content_type}, size: {len(data)} bytes)"
-            )
+            logger.info(f"File uploaded to S3: {object_name} (MIME: {content_type})")
             return object_name, content_type
-        except ValueError:
-            raise  # MIME validation errors — пробрасываем наверх
-        except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
-            error_message = e.response.get('Error', {}).get('Message', str(e))
-            logger.error(
-                f"Error uploading to S3: {error_code} - {error_message}. "
-                f"Bucket: {self.bucket_name}, Key: {object_name}"
-            )
+        except Exception as e:
+            logger.error(f"Error uploading to S3: {e}")
             return None, None
 
     def download_file(self, object_name: str) -> Optional[bytes]:
-        """Скачать файл из S3."""
+        """Скачать весь файл в память (ОСТОРОЖНО: может вызвать OOM)."""
         try:
-            logger.debug(f"Downloading from S3: bucket={self.bucket_name}, key={object_name}")
             response = self.s3_client.get_object(Bucket=self.bucket_name, Key=object_name)
-            data = response['Body'].read()
-            logger.info(f"Downloaded from S3: {object_name}, size={len(data)} bytes")
-            return data
-        except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
-            error_message = e.response.get('Error', {}).get('Message', str(e))
-            logger.error(
-                f"Error downloading from S3: {error_code} - {error_message}. "
-                f"Bucket: {self.bucket_name}, Key: {object_name}, "
-                f"Endpoint: {settings.S3_ENDPOINT_URL}"
-            )
-            if error_code == 'SignatureDoesNotMatch':
-                logger.error(
-                    "SignatureDoesNotMatch - возможные причины:\n"
-                    "- Пробелы в S3_ACCESS_KEY или S3_SECRET_KEY\n"
-                    "- Неправильные значения ключей\n"
-                    "- Неправильный endpoint URL"
-                )
+            return response['Body'].read()
+        except Exception as e:
+            logger.error(f"Error downloading from S3: {e}")
             return None
+
+    def download_file_to_path(self, object_name: str, target_path: str) -> bool:
+        """Скачать файл из S3 напрямую на диск."""
+        try:
+            logger.debug(f"Downloading from S3 to disk: {object_name} -> {target_path}")
+            self.s3_client.download_file(self.bucket_name, object_name, target_path)
+            return True
+        except Exception as e:
+            logger.error(f"Error downloading from S3 to disk: {e}")
+            return False
 
     def delete_file(self, object_name: str) -> bool:
         """Удалить файл из S3."""
@@ -406,12 +348,12 @@ class S3Storage:
                 filename = object_name.split('/')[-1]
                 params['ResponseContentDisposition'] = f'attachment; filename="{filename}"'
 
-            url = self.s3_client.generate_presigned_url(
+            url = self.s3_public_client.generate_presigned_url(
                 'get_object',
                 Params=params,
                 ExpiresIn=expiration
             )
-            logger.debug(f"Presigned URL generated: {object_name} (Content-Type: {content_type})")
+            logger.debug(f"Presigned URL generated (public): {object_name} (Content-Type: {content_type})")
             return url
         except ClientError as e:
             logger.error(f"Error generating presigned URL: {e}")
@@ -438,7 +380,7 @@ class S3Storage:
             logger.debug(f"Using default cover image: {object_name}")
             return object_name
 
-        base_url = settings.S3_ENDPOINT_URL.rstrip('/')
+        base_url = settings.S3_PUBLIC_URL.rstrip('/')
         encoded_path = quote(object_name, safe='/')
         return f"{base_url}/{self.bucket_name}/{encoded_path}"
 
@@ -473,6 +415,10 @@ class S3Storage:
             self.generate_presigned_url,
             object_name, expiration, as_attachment, content_type
         )
+
+    async def async_download_file_to_path(self, object_name: str, target_path: str) -> bool:
+        """Async wrapper для download_file_to_path."""
+        return await asyncio.to_thread(self.download_file_to_path, object_name, target_path)
 
     async def async_delete_file(self, object_name: str) -> bool:
         """Async wrapper для delete_file — не блокирует event loop."""

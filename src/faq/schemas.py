@@ -38,3 +38,19 @@ class FAQCategoryOut(FAQCategoryBase):
     updated_at: Optional[datetime]
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class FAQPublicItem(BaseModel):
+    id: int
+    question: str
+    answer: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FAQCategoryPublicOut(BaseModel):
+    id: int
+    name: str
+    items: List[FAQPublicItem] = []
+
+    model_config = ConfigDict(from_attributes=True)

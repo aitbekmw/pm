@@ -19,6 +19,11 @@ from src.companies.routes import router as companies_router
 from src.faq.routes import router as faq_router
 from src.companies.services import seed_default_companies
 from src.db.session import AsyncSessionLocal
+from src.core.middleware.request_id import RequestIdMiddleware
+from src.core.middleware.logging import RequestLoggingMiddleware
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Initialize Sentry before logging setup
 if settings.SENTRY_DSN:
@@ -76,6 +81,21 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# Logging middlewares (added last means they wrap as outermost and run first)
+app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(RequestIdMiddleware)
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(
+        f"Unhandled exception on {request.method} {request.url.path}",
+        exc_info=True,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error"},
+    )
 
 # Setup admin panel
 setup_admin(app)

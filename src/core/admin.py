@@ -25,6 +25,12 @@ USER_ROLE_CHOICES = [
     ("QA", "QA"),
 ]
 
+def range_choices(start: int, end: int):
+    return [(i, str(i)) for i in range(start, end + 1)]
+
+MAX_FAQ_CATEGORIES = 15
+MAX_FAQS_PER_CATEGORY = 30
+
 
 class BaseAdmin(ModelView):
     column_type_formatters = {
@@ -257,6 +263,17 @@ class FAQCategoryAdmin(RestrictedModelView, model=FAQCategory):
         FAQCategory.is_active,
     ]
 
+    form_overrides = {
+        "order": SelectField,
+    }
+
+    form_args = {
+        "order": {
+            "choices": range_choices(1, MAX_FAQ_CATEGORIES),
+            "coerce": int,
+        }
+    }
+
 
 class FAQAdmin(RestrictedModelView, model=FAQ):
     name = "FAQ (Ответы на вопросы)"
@@ -295,6 +312,17 @@ class FAQAdmin(RestrictedModelView, model=FAQ):
         FAQ.order,
         FAQ.is_active,
     ]
+
+    form_overrides = {
+        "order": SelectField,
+    }
+
+    form_args = {
+        "order": {
+            "choices": range_choices(1, MAX_FAQS_PER_CATEGORY),
+            "coerce": int,
+        }
+    }
 
 
 class AnalyticsView(BaseView):

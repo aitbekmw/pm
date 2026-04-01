@@ -6,7 +6,8 @@ from src.users.models import User
 
 
 async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
-    result = await db.execute(select(User).where(User.id == user_id))
+    """Получает пользователя по ID (только активных)"""
+    result = await db.execute(select(User).where(User.id == user_id, User.is_active == True))
     return result.scalars().first()
 
 

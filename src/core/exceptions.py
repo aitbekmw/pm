@@ -66,3 +66,8 @@ class UnauthorizedDomainError(Exception):
             f"Вход разрешён только с корпоративной почты. "
             f"Домен «{domain}» не привязан ни к одной компании."
         )
+
+
+class UserDeactivatedError(Exception):
+    """Пользователь деактивирован."""
+    pass
