@@ -13,6 +13,13 @@ from src.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+class TranscriptionError(Exception):
+    """Ошибка транскрибации с описанием причины"""
+    def __init__(self, message: str, reason: str = "unknown"):
+        self.reason = reason
+        super().__init__(message)
+
+
 class AIService:
     def __init__(self):
         # Старый код OpenAI (закомментирован)
@@ -66,66 +73,137 @@ class AIService:
     #         return None
 
     async def _transcribe_local_whisper(self, audio_file: BinaryIO, filename: str = "audio.wav") -> Optional[dict]:
-        """Транскрибация через локальный Whisper сервер"""
+        """Транскрибация через локальный Whisper сервер.
+        
+        Raises:
+            TranscriptionError: При ошибке транскрибации с описанием причины.
+        """
+        tmp_wav_path = None
         try:
             audio_file.seek(0)
             audio_bytes = audio_file.read()
 
+            if not audio_bytes or len(audio_bytes) < 100:
+                raise TranscriptionError(
+                    "Аудиофайл пуст или повреждён. Загрузите корректный файл.",
+                    reason="empty_audio_file"
+                )
+
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
-                wav_path = tmp_file.name
+                tmp_wav_path = tmp_file.name
                 tmp_file.write(audio_bytes)
 
             try:
-                with open(wav_path, 'rb') as wav_file:
+                with open(tmp_wav_path, 'rb') as wav_file:
                     wav_bytes = wav_file.read()
 
-                async with httpx.AsyncClient(timeout=600) as client:
-                    files = {"file": (filename, wav_bytes)}
-                    response = await client.post(self.whisper_url, files=files)
-                    response.raise_for_status()
+                try:
+                    async with httpx.AsyncClient(timeout=600) as client:
+                        files = {"file": (filename, wav_bytes)}
+                        response = await client.post(self.whisper_url, files=files)
+                        response.raise_for_status()
+                except httpx.ConnectError:
+                    raise TranscriptionError(
+                        "Сервер транскрибации недоступен. Попробуйте позже.",
+                        reason="whisper_unavailable"
+                    )
+                except httpx.TimeoutException:
+                    raise TranscriptionError(
+                        "Превышено время ожидания ответа от сервера транскрибации. Попробуйте позже или загрузите файл меньшего размера.",
+                        reason="whisper_timeout"
+                    )
+                except httpx.HTTPStatusError as http_err:
+                    raise TranscriptionError(
+                        f"Сервер транскрибации вернул ошибку (HTTP {http_err.response.status_code}). Попробуйте позже.",
+                        reason="whisper_http_error"
+                    )
 
-                    result = response.json()
+                result = response.json()
+                
+                # Логируем сырой ответ от Whisper для диагностики
+                logger.info(f"Whisper raw response (first 500 chars): {str(result)[:500]}")
 
-                    if isinstance(result, dict) and "text" in result:
-                        return result
+                # Тексты-заглушки которые Whisper может вернуть вместо реальной транскрибации
+                WHISPER_EMPTY_PLACEHOLDERS = {
+                    "text is empty",
+                    "no speech detected",
+                    "audio is too short",
+                    "no text",
+                    "",
+                }
 
-                    transcript_text = ""
-                    segments = []
+                def _is_empty_transcript(text: str) -> bool:
+                    """Проверяет, является ли текст пустым или заглушкой от Whisper"""
+                    if not text:
+                        return True
+                    return text.strip().lower() in WHISPER_EMPTY_PLACEHOLDERS
 
-                    items = result if isinstance(result, list) else result.get("segments", [])
+                if isinstance(result, dict) and "text" in result:
+                    text = result.get("text", "").strip()
+                    if _is_empty_transcript(text):
+                        whisper_msg = f" (Whisper вернул: \"{text}\")" if text else ""
+                        raise TranscriptionError(
+                            f"В аудиозаписи не обнаружена речь.{whisper_msg} Убедитесь, что файл содержит голосовые данные.",
+                            reason="no_speech_detected"
+                        )
+                    return result
 
-                    for idx, item in enumerate(items):
-                        if isinstance(item, dict):
-                            start = float(item.get("start", 0))
-                            end = float(item.get("end", 0))
-                            text = item.get("text", "")
-                            transcript_text += text + " "
-                            segments.append({
-                                "id": idx,
-                                "seek": 0,
-                                "start": start,
-                                "end": end,
-                                "text": text,
-                                "tokens": [],
-                                "temperature": 0.0,
-                                "avg_logprob": 0.0,
-                                "compression_ratio": 0.0,
-                                "no_speech_prob": 0.0,
-                            })
+                transcript_text = ""
+                segments = []
 
-                    return {
-                        "text": transcript_text.strip(),
-                        "segments": segments,
-                        "language": "ru"
-                    }
+                items = result if isinstance(result, list) else result.get("segments", [])
+
+                if not items:
+                    raise TranscriptionError(
+                        "Сервер транскрибации вернул пустой результат. В аудио не найдено распознаваемой речи.",
+                        reason="no_speech_detected"
+                    )
+
+                for idx, item in enumerate(items):
+                    if isinstance(item, dict):
+                        start = float(item.get("start", 0))
+                        end = float(item.get("end", 0))
+                        text = item.get("text", "")
+                        transcript_text += text + " "
+                        segments.append({
+                            "id": idx,
+                            "seek": 0,
+                            "start": start,
+                            "end": end,
+                            "text": text,
+                            "tokens": [],
+                            "temperature": 0.0,
+                            "avg_logprob": 0.0,
+                            "compression_ratio": 0.0,
+                            "no_speech_prob": 0.0,
+                        })
+
+                final_text = transcript_text.strip()
+                if _is_empty_transcript(final_text):
+                    whisper_msg = f" (Whisper вернул: \"{final_text}\")" if final_text else ""
+                    raise TranscriptionError(
+                        f"В аудиозаписи не обнаружена речь.{whisper_msg} Убедитесь, что файл содержит голосовые данные.",
+                        reason="no_speech_detected"
+                    )
+
+                return {
+                    "text": final_text,
+                    "segments": segments,
+                    "language": "ru"
+                }
 
             finally:
-                if os.path.exists(wav_path):
-                    os.unlink(wav_path)
+                if tmp_wav_path and os.path.exists(tmp_wav_path):
+                    os.unlink(tmp_wav_path)
 
+        except TranscriptionError:
+            raise  # Пробрасываем наши ошибки без изменений
         except Exception as e:
             logger.error(f"Error transcribing audio with local Whisper: {e}", exc_info=True)
-            return None
+            raise TranscriptionError(
+                f"Непредвиденная ошибка транскрибации: {str(e)}",
+                reason="unexpected_error"
+            )
 
     async def summarize_transcript(self, transcript_text: str, meeting_title: str = "") -> Optional[str]:
         """Суммаризация транскрипта"""

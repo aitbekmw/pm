@@ -350,13 +350,9 @@ async def get_roles(
 ):
     """Получить список доступных ролей в системе"""
     available_roles = [
+        "Admin",
         "Manager",
         "Member",
-        "Admin",
-        "Backend Dev",
-        "Frontend Dev",
-        "Designer",
-        "QA"
     ]
     return {
         "roles": available_roles,

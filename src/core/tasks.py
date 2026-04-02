@@ -11,7 +11,7 @@ from src.db.session import AsyncSessionLocal
 from src.db.base import import_all_models
 from src.meetings.models import Meeting, MeetingProcessing, Transcript, Summary, ActionItem
 from src.core.storage import storage
-from src.core.ai_services import ai_service
+from src.core.ai_services import ai_service, TranscriptionError
 from src.core.pdf_generator import generate_meeting_pdf
 from src.meetings import selectors
 from arq.connections import RedisSettings
@@ -85,14 +85,21 @@ async def process_meeting(ctx, meeting_id: int):
                 await db.commit()
                 
                 # Транскрибировать
-                with open(tmp_path, "rb") as audio_file:
-                    transcript_data = await ai_service.transcribe_audio(
-                        audio_file, 
-                        filename=meeting.audio_file_path.split('/')[-1]
-                    )
+                try:
+                    with open(tmp_path, "rb") as audio_file:
+                        transcript_data = await ai_service.transcribe_audio(
+                            audio_file, 
+                            filename=meeting.audio_file_path.split('/')[-1]
+                        )
+                except TranscriptionError as te:
+                    logger.warning(f"Transcription error for meeting {meeting_id}: {te} (reason={te.reason})")
+                    raise  # Пробрасываем — сообщение сохранится в error_message
                 
                 if not transcript_data:
-                    raise Exception("Transcription failed")
+                    raise TranscriptionError(
+                        "Транскрибация не вернула данных. Попробуйте загрузить файл повторно.",
+                        reason="no_data"
+                    )
                 
                 processing.progress = 50
                 await db.commit()
@@ -100,7 +107,10 @@ async def process_meeting(ctx, meeting_id: int):
                 # Сохранить транскрипт
                 transcript_text = transcript_data.get('text', '')
                 if not transcript_text:
-                    raise Exception("Transcript text is empty")
+                    raise TranscriptionError(
+                        "В аудиозаписи не обнаружена речь. Убедитесь, что файл содержит голосовые данные.",
+                        reason="no_speech_detected"
+                    )
                 
                 processing.current_stage = "transcription_formatting"
                 processing.progress = 55
