@@ -58,11 +58,26 @@ async def create_project(
             )
     
     # Parse JSON strings if provided
-    parsed_users = None
+    parsed_users = []
     if users:
         try:
-            users_list = json.loads(users)
-            parsed_users = [schemas.ProjectUserCreate(**u) for u in users_list]
+            users_data = json.loads(users)
+            
+            # Normalize to a list
+            if isinstance(users_data, dict):
+                users_list = [users_data]
+            elif isinstance(users_data, list):
+                users_list = users_data
+            else:
+                users_list = [users_data]
+            
+            for u in users_list:
+                if isinstance(u, dict):
+                    parsed_users.append(schemas.ProjectUserCreate(**u))
+                elif isinstance(u, (int, str)) and str(u).isdigit():
+                    parsed_users.append(schemas.ProjectUserCreate(id=int(u)))
+                else:
+                    raise ValueError(f"Invalid user format: {u}")
             
             # Validate that all users are active
             for u in parsed_users:
@@ -72,7 +87,7 @@ async def create_project(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail=f"User with ID {u.id} is deactivated or not found"
                     )
-        except (ValueError, TypeError) as e:
+        except (ValueError, TypeError, json.JSONDecodeError) as e:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Invalid users format: {str(e)}"
