@@ -16,7 +16,7 @@ class User(Base):
     ad_account: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     first_name: Mapped[str] = mapped_column(String, nullable=False)
     last_name: Mapped[str] = mapped_column(String, nullable=False)
-    role: Mapped[str] = mapped_column(String, nullable=False)  # Manager | Member | Admin | Backend Dev | Frontend Dev | Designer | QA
+    role: Mapped[str] = mapped_column(String, nullable=False)  # Admin | Manager | Member
     admin_password: Mapped[str | None] = mapped_column(String, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     status: Mapped[str] = mapped_column(String, default="active", nullable=False)  # active | deactivated
