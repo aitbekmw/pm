@@ -16,8 +16,21 @@ async def create_notification(
     message: Optional[str] = None,
     meeting_id: Optional[int] = None,
     project_id: Optional[int] = None
-) -> Notification:
-    """Создать уведомление и отправить push на все устройства пользователя."""
+) -> Optional[Notification]:
+    """Создать уведомление и отправить push на все устройства пользователя.
+    
+    Если пользователь деактивирован (is_active=False), уведомление не создаётся.
+    """
+    from src.users.models import User
+    from sqlalchemy import select
+
+    # Проверяем, что пользователь активен — деактивированным не отправляем уведомления
+    user_result = await db.execute(select(User.is_active).where(User.id == user_id))
+    is_active = user_result.scalar()
+    if is_active is None or not is_active:
+        logger.debug(f"[notifications] skip notification for deactivated user_id={user_id}")
+        return None
+
     notification = Notification(
         user_id=user_id,
         meeting_id=meeting_id,

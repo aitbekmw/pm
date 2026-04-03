@@ -321,7 +321,7 @@ async def update_project(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Обновить проект (только Admin или Manager владелец проекта)
+    """Обновить проект (любой участник проекта)
     
     **Параметры (form-data):**
     - name: название проекта (опционально)
@@ -332,12 +332,12 @@ async def update_project(
     **Отправка:**
     Используйте multipart/form-data
     """
-    # Проверить права на редактирование
-    can_edit = await selectors.check_user_can_edit_project(db, current_user.id, current_user.role, project_id)
-    if not can_edit:
+    # Проверить, что пользователь является участником проекта
+    has_access = await selectors.check_user_has_project_access(db, current_user.id, current_user.role, project_id)
+    if not has_access:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. Only Admin or Manager project owner can edit project"
+            detail="Access denied. Only project members can edit project"
         )
     
     # Проверить размер файла если передан
