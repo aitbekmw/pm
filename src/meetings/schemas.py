@@ -54,6 +54,7 @@ class MeetingOut(BaseModel):
     id: int
     title: str
     project_id: Optional[int]
+    organizer_id: int
     organizer_name: Optional[str] = None
     organizer_status: Optional[str] = None
     meeting_date: datetime
@@ -83,13 +84,11 @@ class MeetingOut(BaseModel):
                     organizer_name = f"{organizer.first_name} {organizer.last_name}".strip()
                 if hasattr(organizer, 'status'):
                     organizer_status = organizer.status
-            elif 'organizer_id' in data and data['organizer_id']:
-                # Если organizer не загружен, но есть organizer_id, оставляем None
-                pass
+            
             data['organizer_name'] = organizer_name
             data['organizer_status'] = organizer_status
-            # Удаляем organizer_id и organizer из данных, чтобы они не попадали в ответ
-            data.pop('organizer_id', None)
+            
+            # Удаляем только объект organizer, но оставляем organizer_id
             data.pop('organizer', None)
         elif hasattr(data, 'organizer'):
             # Обрабатываем объект SQLAlchemy
@@ -103,6 +102,7 @@ class MeetingOut(BaseModel):
                     organizer_status = organizer.status
             data.organizer_name = organizer_name
             data.organizer_status = organizer_status
+            # organizer_id уже есть в атрибутах объекта
         return data
     
     @field_serializer('audio_file_path')

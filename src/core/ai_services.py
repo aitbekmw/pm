@@ -155,7 +155,7 @@ class AIService:
 
                 if not items:
                     raise TranscriptionError(
-                        "Сервер транскрибации вернул пустой результат. В аудио не найдено распознаваемой речи.",
+                        "Звук неразборчив или отсутствует, попробуйте загрузить запись с более четким звуком",
                         reason="no_speech_detected"
                     )
 
@@ -371,6 +371,9 @@ class AIService:
 
     async def format_transcript(self, transcript_text: str) -> Optional[str]:
         """Форматирование транскрипта в Markdown с подсветкой непонятных слов"""
+        # Временно выключено, чтобы не было лишних тегов
+        return transcript_text
+        
         try:
             if not transcript_text or not transcript_text.strip():
                 logger.warning("transcript_text is empty for formatting")
@@ -415,6 +418,9 @@ class AIService:
 
     async def format_segments(self, segments: list[dict]) -> list[dict]:
         """Форматирует отдельные сегменты транскрипта, добавляя теги для непонятных слов"""
+        # Временно выключено
+        return segments
+        
         if not segments:
             return []
             
