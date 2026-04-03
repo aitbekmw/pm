@@ -225,7 +225,13 @@ async def process_meeting(ctx, meeting_id: int):
         except Exception as e:
             logger.error(f"Error processing meeting {meeting_id}: {e}", exc_info=True)
             await db.rollback()
-            processing.status = "failed"
+            
+            # Проверяем причину ошибки: если нет речи, ставим специальный статус
+            status = "failed"
+            if isinstance(e, TranscriptionError) and e.reason == "no_speech_detected":
+                status = "no_speech_detected"
+                
+            processing.status = status
             processing.error_message = str(e)
             processing.completed_at = datetime.now(timezone.utc)
             await db.commit()
