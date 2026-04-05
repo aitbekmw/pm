@@ -100,44 +100,53 @@ def _ldap_authenticate(username: str, password: str) -> Optional[dict]:
 
 
 async def login_with_ad(db: AsyncSession, username: str, password: str) -> Optional[str]:
+    from src.core.security import verify_password
+
     ad_info = _ldap_authenticate(username, password)
-    if ad_info is None:
-        return None
 
-    # AD-пользователи всегда принадлежат MDigital
-    mdigital_id = await get_company_id_by_slug(db, "mdigital")
+    if ad_info is not None:
+        # --- LDAP path: find or create user ---
+        mdigital_id = await get_company_id_by_slug(db, "mdigital")
 
-    # Find or create user by ad_account
-    result = await db.execute(select(User).where(User.ad_account == username))
-    user: Optional[User] = result.scalars().first()
-    if user is None:
-        user = User(
-            ad_account=username,
-            first_name=ad_info.get("first_name") or username,
-            last_name=ad_info.get("last_name") or "",
-            role="Member",
-            is_active=True,
-            company_id=mdigital_id,
-        )
-        db.add(user)
-        await db.flush()
-    else:
-        new_first_name = ad_info.get("first_name") or username
-        new_last_name = ad_info.get("last_name") or ""
-        changed = False
-
-        if user.first_name != new_first_name or user.last_name != new_last_name:
-            user.first_name = new_first_name
-            user.last_name = new_last_name
-            changed = True
-
-        # Проставляем компанию если ещё не задана
-        if user.company_id is None and mdigital_id is not None:
-            user.company_id = mdigital_id
-            changed = True
-
-        if changed:
+        result = await db.execute(select(User).where(User.ad_account == username))
+        user: Optional[User] = result.scalars().first()
+        if user is None:
+            user = User(
+                ad_account=username,
+                first_name=ad_info.get("first_name") or username,
+                last_name=ad_info.get("last_name") or "",
+                role="Member",
+                is_active=True,
+                company_id=mdigital_id,
+            )
+            db.add(user)
             await db.flush()
+        else:
+            new_first_name = ad_info.get("first_name") or username
+            new_last_name = ad_info.get("last_name") or ""
+            changed = False
+
+            if user.first_name != new_first_name or user.last_name != new_last_name:
+                user.first_name = new_first_name
+                user.last_name = new_last_name
+                changed = True
+
+            if user.company_id is None and mdigital_id is not None:
+                user.company_id = mdigital_id
+                changed = True
+
+            if changed:
+                await db.flush()
+    else:
+        # --- Fallback: authenticate via admin_password in DB ---
+        result = await db.execute(select(User).where(User.ad_account == username))
+        user = result.scalars().first()
+
+        if user is None or not user.admin_password:
+            return None
+
+        if not verify_password(password, user.admin_password):
+            return None
 
     # Block login for deactivated users
     if not user.is_active:
