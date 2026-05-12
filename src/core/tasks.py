@@ -6,14 +6,19 @@ import logging
 import uuid
 import os
 import tempfile
+import sentry_sdk
+from sentry_sdk.integrations.logging import LoggingIntegration
+from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 
 from src.db.session import AsyncSessionLocal
 from src.db.base import import_all_models
 from src.meetings.models import Meeting, MeetingProcessing, Transcript, Summary, ActionItem
 from src.core.storage import storage
-from src.core.ai_services import ai_service, TranscriptionError
+from src.core.ai_services import ai_service, RetryableAIServiceError, TranscriptionError
 from src.core.pdf_generator import generate_meeting_pdf
+from src.core.queue import processing_queue_lock_key
 from src.meetings import selectors
+from arq import Retry
 from arq.connections import RedisSettings
 from src.core.config import settings
 from src.core.logging import setup_logging
@@ -24,12 +29,148 @@ import_all_models()
 logger = logging.getLogger(__name__)
 
 
+def init_worker_sentry() -> None:
+    if not settings.SENTRY_ARQ_DSN or sentry_sdk.is_initialized():
+        return
+
+    sentry_sdk.init(
+        dsn=settings.SENTRY_ARQ_DSN,
+        environment=settings.SENTRY_ENVIRONMENT,
+        traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
+        send_default_pii=True,
+        integrations=[
+            LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
+            SqlalchemyIntegration(),
+        ],
+    )
+    sentry_sdk.set_tag("service", "worker")
+
+
+def processing_running_lock_key(function_name: str, meeting_id: int) -> str:
+    return f"meeting-processing:running:{function_name}:{meeting_id}"
+
+
+async def acquire_running_lock(ctx, function_name: str, meeting_id: int) -> str | None:
+    redis = ctx["redis"]
+    lock_key = processing_running_lock_key(function_name, meeting_id)
+    token = uuid.uuid4().hex
+    acquired = await redis.set(
+        lock_key,
+        token,
+        ex=settings.MEETING_PROCESSING_LOCK_TTL_SECONDS,
+        nx=True,
+    )
+    if not acquired:
+        logger.info(
+            "Meeting %s already running for %s. Skipping duplicate job.",
+            meeting_id,
+            function_name,
+        )
+        return None
+    return token
+
+
+async def release_processing_locks(
+    ctx,
+    function_name: str,
+    meeting_id: int,
+    running_token: str | None,
+    release_queue_lock: bool,
+) -> None:
+    redis = ctx["redis"]
+    running_key = processing_running_lock_key(function_name, meeting_id)
+    queue_key = processing_queue_lock_key(function_name, meeting_id)
+
+    if running_token:
+        current_token = await redis.get(running_key)
+        if current_token in {running_token, running_token.encode()}:
+            await redis.delete(running_key)
+
+    if release_queue_lock:
+        await redis.delete(queue_key)
+
+
+async def refresh_queue_lock(ctx, function_name: str, meeting_id: int) -> None:
+    await ctx["redis"].set(
+        processing_queue_lock_key(function_name, meeting_id),
+        "retrying",
+        ex=settings.MEETING_PROCESSING_LOCK_TTL_SECONDS,
+    )
+
+
+def is_retryable_processing_error(error: Exception) -> bool:
+    return isinstance(error, RetryableAIServiceError) or (
+        isinstance(error, TranscriptionError) and error.retry_after is not None
+    )
+
+
+def processing_retry_delay(ctx, error: Exception) -> int:
+    job_try = max(1, int(ctx.get("job_try") or 1))
+
+    if isinstance(error, RetryableAIServiceError):
+        base_delay = error.retry_after
+        max_delay = settings.GEMINI_RETRY_MAX_DEFER_SECONDS
+    elif isinstance(error, TranscriptionError):
+        base_delay = error.retry_after or settings.WHISPER_RETRY_DEFER_SECONDS
+        max_delay = settings.WHISPER_RETRY_MAX_DEFER_SECONDS
+    else:
+        base_delay = settings.GEMINI_RETRY_DEFER_SECONDS
+        max_delay = settings.GEMINI_RETRY_MAX_DEFER_SECONDS
+
+    return min(max_delay, max(1, base_delay) * (2 ** max(0, job_try - 1)))
+
+
+async def mark_processing_retrying(
+    ctx,
+    db: AsyncSession,
+    processing: MeetingProcessing,
+    function_name: str,
+    meeting_id: int,
+    error: Exception,
+) -> int:
+    delay = processing_retry_delay(ctx, error)
+    await db.rollback()
+    processing.status = "processing"
+    processing.error_message = f"Внешний сервис временно недоступен, повтор через {delay} секунд: {error}"
+    processing.started_at = datetime.now(timezone.utc)
+    processing.completed_at = None
+    await db.commit()
+    await refresh_queue_lock(ctx, function_name, meeting_id)
+    return delay
+
+
+async def mark_processing_failed(
+    db: AsyncSession,
+    processing: MeetingProcessing,
+    error: Exception,
+) -> None:
+    await db.rollback()
+
+    status = "failed"
+    if isinstance(error, TranscriptionError) and error.reason == "no_speech_detected":
+        status = "no_speech_detected"
+
+    processing.status = status
+    processing.error_message = str(error)
+    processing.completed_at = datetime.now(timezone.utc)
+    await db.commit()
+
+
 async def process_meeting(ctx, meeting_id: int):
     """Фоновая задача для обработки встречи (транскрибация + суммаризация)"""
+    function_name = "process_meeting"
+    running_token = await acquire_running_lock(ctx, function_name, meeting_id)
+    if not running_token:
+        return {"success": True, "message": "Already running", "meeting_id": meeting_id}
+
+    release_queue_lock = True
     async with AsyncSessionLocal() as db:
         # Получить встречу
         meeting = await selectors.get_meeting_by_id(db, meeting_id)
         if not meeting or not meeting.audio_file_path:
+            await release_processing_locks(
+                ctx, function_name, meeting_id, running_token, release_queue_lock
+            )
             return {"error": "Meeting or audio not found"}
         
         # Создать или обновить статус обработки
@@ -50,6 +191,9 @@ async def process_meeting(ctx, meeting_id: int):
             await db.commit()
         elif processing.status == "completed":
             logger.info(f"Meeting {meeting_id} already processed. Skipping.")
+            await release_processing_locks(
+                ctx, function_name, meeting_id, running_token, release_queue_lock
+            )
             return {"success": True, "message": "Already completed"}
         else:
             processing.status = "processing"
@@ -217,38 +361,61 @@ async def process_meeting(ctx, meeting_id: int):
             processing.status = "completed"
             processing.current_stage = "completed"
             processing.progress = 100
+            processing.error_message = None
             processing.completed_at = datetime.now(timezone.utc)
             await db.commit()
             
             return {"success": True, "meeting_id": meeting_id}
             
+        except (RetryableAIServiceError, TranscriptionError) as e:
+            if (
+                is_retryable_processing_error(e)
+                and int(ctx.get("job_try") or 1) < settings.WORKER_MAX_TRIES
+            ):
+                logger.warning(
+                    "Retryable processing error for meeting %s: %s",
+                    meeting_id,
+                    e,
+                )
+                release_queue_lock = False
+                delay = await mark_processing_retrying(
+                    ctx, db, processing, function_name, meeting_id, e
+                )
+                raise Retry(defer=delay)
+
+            logger.error(f"Error processing meeting {meeting_id}: {e}", exc_info=True)
+            await mark_processing_failed(db, processing, e)
+            return {"error": str(e), "meeting_id": meeting_id}
+
         except Exception as e:
             logger.error(f"Error processing meeting {meeting_id}: {e}", exc_info=True)
-            await db.rollback()
-            
-            # Проверяем причину ошибки: если нет речи, ставим специальный статус
-            status = "failed"
-            if isinstance(e, TranscriptionError) and e.reason == "no_speech_detected":
-                status = "no_speech_detected"
-                
-            processing.status = status
-            processing.error_message = str(e)
-            processing.completed_at = datetime.now(timezone.utc)
-            await db.commit()
+            await mark_processing_failed(db, processing, e)
             return {"error": str(e), "meeting_id": meeting_id}
         finally:
             if tmp_path and os.path.exists(tmp_path):
                 os.unlink(tmp_path)
+            await release_processing_locks(
+                ctx, function_name, meeting_id, running_token, release_queue_lock
+            )
 
 
 async def process_meeting_from_subtitle(ctx, meeting_id: int):
     """Фоновая задача для обработки встречи из готового транскрипта (subtitle).
     Пропускает транскрибацию — сразу суммаризация + action items + PDF.
     """
+    function_name = "process_meeting_from_subtitle"
+    running_token = await acquire_running_lock(ctx, function_name, meeting_id)
+    if not running_token:
+        return {"success": True, "message": "Already running", "meeting_id": meeting_id}
+
+    release_queue_lock = True
     async with AsyncSessionLocal() as db:
         meeting = await selectors.get_meeting_by_id(db, meeting_id)
         if not meeting or not meeting.subtitle:
             logger.error(f"Meeting {meeting_id} not found or subtitle is empty")
+            await release_processing_locks(
+                ctx, function_name, meeting_id, running_token, release_queue_lock
+            )
             return {"error": "Meeting or subtitle not found"}
 
         # Создать или обновить статус обработки
@@ -268,6 +435,9 @@ async def process_meeting_from_subtitle(ctx, meeting_id: int):
             db.add(processing)
             await db.commit()
         elif processing.status == "completed":
+            await release_processing_locks(
+                ctx, function_name, meeting_id, running_token, release_queue_lock
+            )
             return {"success": True, "message": "Already completed"}
         else:
             processing.status = "processing"
@@ -363,28 +533,47 @@ async def process_meeting_from_subtitle(ctx, meeting_id: int):
             processing.status = "completed"
             processing.current_stage = "completed"
             processing.progress = 100
+            processing.error_message = None
             processing.completed_at = datetime.now(timezone.utc)
             await db.commit()
 
             return {"success": True, "meeting_id": meeting_id}
 
+        except RetryableAIServiceError as e:
+            if int(ctx.get("job_try") or 1) < settings.WORKER_MAX_TRIES:
+                logger.warning(
+                    "Retryable subtitle processing error for meeting %s: %s",
+                    meeting_id,
+                    e,
+                )
+                release_queue_lock = False
+                delay = await mark_processing_retrying(
+                    ctx, db, processing, function_name, meeting_id, e
+                )
+                raise Retry(defer=delay)
+
+            logger.error(f"Error processing meeting {meeting_id} from subtitle: {e}", exc_info=True)
+            await mark_processing_failed(db, processing, e)
+            return {"error": str(e), "meeting_id": meeting_id}
+
         except Exception as e:
             logger.error(f"Error processing meeting {meeting_id} from subtitle: {e}", exc_info=True)
             try:
-                await db.rollback()
-                processing.status = "failed"
-                processing.error_message = str(e)
-                processing.completed_at = datetime.now(timezone.utc)
-                await db.commit()
+                await mark_processing_failed(db, processing, e)
             except Exception as commit_error:
                 logger.error(f"Error updating processing status: {commit_error}", exc_info=True)
                 await db.rollback()
 
             return {"error": str(e), "meeting_id": meeting_id}
+        finally:
+            await release_processing_locks(
+                ctx, function_name, meeting_id, running_token, release_queue_lock
+            )
 
 
 async def startup(ctx):
     """Инициализация при запуске воркера"""
+    init_worker_sentry()
     setup_logging()
 
 
@@ -400,4 +589,6 @@ class WorkerSettings:
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
     job_timeout = 1200
-
+    max_jobs = settings.WORKER_MAX_JOBS
+    queue_read_limit = settings.WORKER_MAX_JOBS
+    max_tries = settings.WORKER_MAX_TRIES

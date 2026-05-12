@@ -53,12 +53,28 @@ class Settings(BaseSettings):
     # Whisper Transcription (Local or OpenAI)
     WHISPER_SERVER_URL: Optional[str] = Field(default="http://10.0.10.3:8000/transcribe", env="WHISPER_SERVER_URL")
     USE_LOCAL_WHISPER: bool = Field(default=True, env="USE_LOCAL_WHISPER")
+    WHISPER_TIMEOUT_SECONDS: float = Field(default=600.0, env="WHISPER_TIMEOUT_SECONDS")
+    WHISPER_CONNECT_TIMEOUT_SECONDS: float = Field(default=15.0, env="WHISPER_CONNECT_TIMEOUT_SECONDS")
+    WHISPER_RETRY_DEFER_SECONDS: int = Field(default=60, env="WHISPER_RETRY_DEFER_SECONDS")
+    WHISPER_RETRY_MAX_DEFER_SECONDS: int = Field(default=600, env="WHISPER_RETRY_MAX_DEFER_SECONDS")
+
+    # Gemini throttling/retries
+    GEMINI_REQUEST_TIMEOUT_SECONDS: float = Field(default=120.0, env="GEMINI_REQUEST_TIMEOUT_SECONDS")
+    GEMINI_REQUEST_MAX_ATTEMPTS: int = Field(default=2, env="GEMINI_REQUEST_MAX_ATTEMPTS")
+    GEMINI_REQUEST_INITIAL_BACKOFF_SECONDS: float = Field(default=5.0, env="GEMINI_REQUEST_INITIAL_BACKOFF_SECONDS")
+    GEMINI_REQUEST_MAX_BACKOFF_SECONDS: float = Field(default=30.0, env="GEMINI_REQUEST_MAX_BACKOFF_SECONDS")
+    GEMINI_RETRY_DEFER_SECONDS: int = Field(default=60, env="GEMINI_RETRY_DEFER_SECONDS")
+    GEMINI_RETRY_MAX_DEFER_SECONDS: int = Field(default=600, env="GEMINI_RETRY_MAX_DEFER_SECONDS")
 
     # Redis for ARQ
     REDIS_URL: str = Field(default="redis://redis:6379", env="REDIS_URL")
+    WORKER_MAX_JOBS: int = Field(default=1, env="WORKER_MAX_JOBS")
+    WORKER_MAX_TRIES: int = Field(default=8, env="WORKER_MAX_TRIES")
+    MEETING_PROCESSING_LOCK_TTL_SECONDS: int = Field(default=7200, env="MEETING_PROCESSING_LOCK_TTL_SECONDS")
     
     # Sentry
     SENTRY_DSN: Optional[str] = Field(default=None, env="SENTRY_DSN")
+    SENTRY_ARQ_DSN: Optional[str] = Field(default=None, env="SENTRY_ARQ_DSN")
     SENTRY_ENVIRONMENT: str = Field(default="production", env="SENTRY_ENVIRONMENT")
     SENTRY_TRACES_SAMPLE_RATE: float = Field(default=0.005, env="SENTRY_TRACES_SAMPLE_RATE")
 

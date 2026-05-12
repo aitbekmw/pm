@@ -2,6 +2,22 @@ volumes:
   postgres_data:
   redis_data:
 
+x-app-env: &app-env
+  S3_PUBLIC_URL: ${S3_PUBLIC_URL:?S3_PUBLIC_URL is required}
+  WHISPER_TIMEOUT_SECONDS: ${WHISPER_TIMEOUT_SECONDS:-600}
+  WHISPER_CONNECT_TIMEOUT_SECONDS: ${WHISPER_CONNECT_TIMEOUT_SECONDS:-15}
+  WHISPER_RETRY_DEFER_SECONDS: ${WHISPER_RETRY_DEFER_SECONDS:-60}
+  WHISPER_RETRY_MAX_DEFER_SECONDS: ${WHISPER_RETRY_MAX_DEFER_SECONDS:-600}
+  GEMINI_REQUEST_TIMEOUT_SECONDS: ${GEMINI_REQUEST_TIMEOUT_SECONDS:-120}
+  GEMINI_REQUEST_MAX_ATTEMPTS: ${GEMINI_REQUEST_MAX_ATTEMPTS:-2}
+  GEMINI_REQUEST_INITIAL_BACKOFF_SECONDS: ${GEMINI_REQUEST_INITIAL_BACKOFF_SECONDS:-5}
+  GEMINI_REQUEST_MAX_BACKOFF_SECONDS: ${GEMINI_REQUEST_MAX_BACKOFF_SECONDS:-30}
+  GEMINI_RETRY_DEFER_SECONDS: ${GEMINI_RETRY_DEFER_SECONDS:-60}
+  GEMINI_RETRY_MAX_DEFER_SECONDS: ${GEMINI_RETRY_MAX_DEFER_SECONDS:-600}
+  WORKER_MAX_JOBS: ${WORKER_MAX_JOBS:-1}
+  WORKER_MAX_TRIES: ${WORKER_MAX_TRIES:-8}
+  MEETING_PROCESSING_LOCK_TTL_SECONDS: ${MEETING_PROCESSING_LOCK_TTL_SECONDS:-7200}
+
 services:
   postgres:
     image: pgvector/pgvector:pg17
@@ -28,11 +44,20 @@ services:
     container_name: api
     env_file:
       - .env
+    environment:
+      <<: *app-env
     ports:
     - "${PORT:-8000}:8000"
     depends_on:
       - postgres
       - redis
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    stop_grace_period: 30s
     restart: unless-stopped
 
   worker:
@@ -40,8 +65,11 @@ services:
     container_name: worker
     env_file:
       - .env
+    environment:
+      <<: *app-env
     entrypoint: ["/app/worker.sh"]
     depends_on:
       - postgres
       - redis
+    stop_grace_period: 2m
     restart: unless-stopped

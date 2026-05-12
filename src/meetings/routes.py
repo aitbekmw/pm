@@ -65,12 +65,22 @@ async def create_meeting(
     
     # Автоматически запустить обработку если загружено аудио
     if audio_file:
-        job_id = await enqueue_meeting_processing(meeting.id)
-        logger.info(f"Meeting {meeting.id} processing started automatically after file upload, job_id={job_id}")
+        enqueue_result = await enqueue_meeting_processing(meeting.id)
+        logger.info(
+            "Meeting %s processing enqueue after file upload: job_id=%s already_queued=%s",
+            meeting.id,
+            enqueue_result.job_id,
+            enqueue_result.already_queued,
+        )
     # Если аудио нет, но есть subtitle — запускаем саммаризацию из готового транскрипта
     elif data.subtitle:
-        job_id = await enqueue_meeting_processing_from_subtitle(meeting.id)
-        logger.info(f"Meeting {meeting.id} subtitle processing started, job_id={job_id}")
+        enqueue_result = await enqueue_meeting_processing_from_subtitle(meeting.id)
+        logger.info(
+            "Meeting %s subtitle processing enqueue: job_id=%s already_queued=%s",
+            meeting.id,
+            enqueue_result.job_id,
+            enqueue_result.already_queued,
+        )
 
     return meeting
 
@@ -704,11 +714,12 @@ async def start_meeting_processing(
         )
     
     # Добавить в очередь
-    job_id = await enqueue_meeting_processing(meeting_id)
+    enqueue_result = await enqueue_meeting_processing(meeting_id)
     
     return {
-        "message": "Processing started",
-        "job_id": job_id,
+        "message": "Processing already queued or running" if enqueue_result.already_queued else "Processing started",
+        "job_id": enqueue_result.job_id,
+        "already_queued": enqueue_result.already_queued,
         "meeting_id": meeting_id
     }
 
@@ -975,4 +986,3 @@ async def update_meeting_duration(
         "previous_duration_formatted": old_duration_formatted,
         "message": f"Duration updated successfully from {old_duration_formatted or old_duration} to {duration_formatted}"
     }
-

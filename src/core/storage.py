@@ -270,7 +270,12 @@ class S3Storage:
             if not content_type:
                 content_type = detect_audio_mime(sample, filename=object_name)
 
-            if object_name.startswith("meetings/"):
+            is_pdf_upload = (
+                object_name.lower().endswith(".pdf")
+                and content_type == "application/pdf"
+            )
+
+            if object_name.startswith("meetings/") and not is_pdf_upload:
                 if not validate_audio_mime(content_type):
                     logger.error(f"Rejected non-audio file: {object_name} (MIME: {content_type})")
                     raise ValueError(f"Invalid audio format: {content_type}")

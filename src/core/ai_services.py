@@ -1,8 +1,11 @@
 # Старый код OpenAI (закомментирован)
 # from openai import OpenAI
+import asyncio
 from google import generativeai as genai
+from google.api_core import exceptions as google_exceptions
 from typing import Optional, BinaryIO
 import json
+import random
 import re
 import httpx
 import logging
@@ -13,10 +16,48 @@ from src.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+_RETRYABLE_GOOGLE_EXCEPTIONS = tuple(
+    exc
+    for exc in (
+        getattr(google_exceptions, "ResourceExhausted", None),
+        getattr(google_exceptions, "ServiceUnavailable", None),
+        getattr(google_exceptions, "DeadlineExceeded", None),
+        getattr(google_exceptions, "InternalServerError", None),
+        getattr(google_exceptions, "TooManyRequests", None),
+    )
+    if exc is not None
+)
+
+
+def _bounded_retry_after(value: str | None, default: int, maximum: int) -> int:
+    if not value:
+        return default
+    try:
+        retry_after = int(value)
+    except ValueError:
+        return default
+    return max(1, min(retry_after, maximum))
+
+
 class TranscriptionError(Exception):
     """Ошибка транскрибации с описанием причины"""
-    def __init__(self, message: str, reason: str = "unknown"):
+    def __init__(
+        self,
+        message: str,
+        reason: str = "unknown",
+        retry_after: int | None = None,
+    ):
         self.reason = reason
+        self.retry_after = retry_after
+        super().__init__(message)
+
+
+class RetryableAIServiceError(Exception):
+    """Временная ошибка внешнего AI-сервиса, которую можно повторить позже."""
+
+    def __init__(self, message: str, service: str, retry_after: int):
+        self.service = service
+        self.retry_after = retry_after
         super().__init__(message)
 
 
@@ -31,6 +72,71 @@ class AIService:
         
         self.whisper_url = settings.WHISPER_SERVER_URL
         self.use_local_whisper = settings.USE_LOCAL_WHISPER
+
+    def _is_retryable_google_error(self, error: Exception) -> bool:
+        if isinstance(error, _RETRYABLE_GOOGLE_EXCEPTIONS):
+            return True
+
+        message = str(error).lower()
+        return any(
+            marker in message
+            for marker in (
+                "429",
+                "resource exhausted",
+                "quota",
+                "rate limit",
+                "deadline exceeded",
+                "service unavailable",
+                "internal error",
+            )
+        )
+
+    async def _generate_content_with_retry(
+        self,
+        model: genai.GenerativeModel,
+        prompt: str,
+        generation_config: genai.types.GenerationConfig,
+        operation: str,
+    ):
+        attempts = max(1, settings.GEMINI_REQUEST_MAX_ATTEMPTS)
+        last_error: Exception | None = None
+
+        for attempt in range(1, attempts + 1):
+            try:
+                return await asyncio.to_thread(
+                    model.generate_content,
+                    prompt,
+                    generation_config=generation_config,
+                    request_options={"timeout": settings.GEMINI_REQUEST_TIMEOUT_SECONDS},
+                )
+            except Exception as error:
+                if not self._is_retryable_google_error(error):
+                    raise
+
+                last_error = error
+                if attempt >= attempts:
+                    break
+
+                delay = min(
+                    settings.GEMINI_REQUEST_MAX_BACKOFF_SECONDS,
+                    settings.GEMINI_REQUEST_INITIAL_BACKOFF_SECONDS * (2 ** (attempt - 1)),
+                )
+                delay += random.uniform(0, delay * 0.25)
+                logger.warning(
+                    "Transient Gemini error during %s, attempt %s/%s, retrying in %.1fs: %s",
+                    operation,
+                    attempt,
+                    attempts,
+                    delay,
+                    error,
+                )
+                await asyncio.sleep(delay)
+
+        raise RetryableAIServiceError(
+            f"Google Gemini temporarily unavailable during {operation}: {last_error}",
+            service="gemini",
+            retry_after=settings.GEMINI_RETRY_DEFER_SECONDS,
+        ) from last_error
 
     async def transcribe_audio(self, audio_file: BinaryIO, filename: str = "audio.wav") -> Optional[dict]:
         """Транскрибация WAV аудио через Whisper"""
@@ -98,24 +204,38 @@ class AIService:
                     wav_bytes = wav_file.read()
 
                 try:
-                    async with httpx.AsyncClient(timeout=600) as client:
+                    timeout = httpx.Timeout(
+                        settings.WHISPER_TIMEOUT_SECONDS,
+                        connect=settings.WHISPER_CONNECT_TIMEOUT_SECONDS,
+                    )
+                    async with httpx.AsyncClient(timeout=timeout) as client:
                         files = {"file": (filename, wav_bytes)}
                         response = await client.post(self.whisper_url, files=files)
                         response.raise_for_status()
                 except httpx.ConnectError:
                     raise TranscriptionError(
                         "Сервер транскрибации недоступен. Попробуйте позже.",
-                        reason="whisper_unavailable"
+                        reason="whisper_unavailable",
+                        retry_after=settings.WHISPER_RETRY_DEFER_SECONDS,
                     )
                 except httpx.TimeoutException:
                     raise TranscriptionError(
                         "Превышено время ожидания ответа от сервера транскрибации. Попробуйте позже или загрузите файл меньшего размера.",
-                        reason="whisper_timeout"
+                        reason="whisper_timeout",
+                        retry_after=settings.WHISPER_RETRY_DEFER_SECONDS,
                     )
                 except httpx.HTTPStatusError as http_err:
+                    status_code = http_err.response.status_code
+                    retryable = status_code in {408, 409, 425, 429} or status_code >= 500
+                    retry_after = _bounded_retry_after(
+                        http_err.response.headers.get("Retry-After"),
+                        settings.WHISPER_RETRY_DEFER_SECONDS,
+                        settings.WHISPER_RETRY_MAX_DEFER_SECONDS,
+                    )
                     raise TranscriptionError(
-                        f"Сервер транскрибации вернул ошибку (HTTP {http_err.response.status_code}). Попробуйте позже.",
-                        reason="whisper_http_error"
+                        f"Сервер транскрибации вернул ошибку (HTTP {status_code}). Попробуйте позже.",
+                        reason="whisper_retryable_http_error" if retryable else "whisper_http_error",
+                        retry_after=retry_after if retryable else None,
                     )
 
                 result = response.json()
@@ -245,18 +365,22 @@ class AIService:
                 system_instruction=system_instruction
             )
             
-            response = model_with_instruction.generate_content(
+            response = await self._generate_content_with_retry(
+                model_with_instruction,
                 prompt,
-                generation_config=genai.types.GenerationConfig(
+                genai.types.GenerationConfig(
                     temperature=1.0,
                     max_output_tokens=2500,
-                )
+                ),
+                operation="summarization",
             )
 
             result = response.text
             logger.info(f"Summarization completed successfully, result length: {len(result) if result else 0}")
             return result
 
+        except RetryableAIServiceError:
+            raise
         except Exception as e:
             logger.error(f"Error summarizing transcript: {e}", exc_info=True)
             return None
@@ -305,13 +429,15 @@ class AIService:
                 system_instruction=system_instruction
             )
             
-            response = model_with_instruction.generate_content(
+            response = await self._generate_content_with_retry(
+                model_with_instruction,
                 prompt,
-                generation_config=genai.types.GenerationConfig(
+                genai.types.GenerationConfig(
                     temperature=1.0,
                     max_output_tokens=2500,
                     response_mime_type="application/json",
-                )
+                ),
+                operation="action_items",
             )
 
             # Парсим JSON ответ
@@ -365,6 +491,8 @@ class AIService:
             else:
                 return []
 
+        except RetryableAIServiceError:
+            raise
         except Exception as e:
             logger.error(f"Error extracting action items: {e}", exc_info=True)
             return []
