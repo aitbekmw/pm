@@ -28,6 +28,7 @@ class ProjectUpdate(BaseModel):
     confluence_data: Optional[dict] = None
     jira_data: Optional[dict] = None
     cover: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
 
 
 class ProjectOut(ProjectBase):
@@ -39,10 +40,11 @@ class ProjectOut(ProjectBase):
     updated_at: Optional[datetime]
     members_count: Optional[int] = 0
     meetings_count: Optional[int] = 0
+    telegram_chat_id: Optional[str] = None
 
     class Config:
         from_attributes = True
-    
+
     @field_serializer('cover')
     def serialize_cover(self, value: Optional[str], _info):
         """Генерирует прямую ссылку на обложку проекта """
@@ -79,7 +81,7 @@ class UserAccessInfo(BaseModel):
 
     class Config:
         from_attributes = True
-    
+
     @property
     def full_name(self) -> str:
         """Полное имя пользователя"""
@@ -126,7 +128,7 @@ class ProjectCoverUploadResponse(BaseModel):
 
     class Config:
         from_attributes = True
-    
+
     @field_serializer('cover')
     def serialize_cover(self, value: Optional[str], _info):
         """Генерирует прямую ссылку на обложку проекта """
@@ -142,5 +144,3 @@ class ProjectCoverUrlResponse(BaseModel):
 
     class Config:
         from_attributes = True
-
-

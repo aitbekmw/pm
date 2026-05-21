@@ -1,5 +1,6 @@
+version: '3.8'
+
 volumes:
-  # Используем отдельные тома для dev, чтобы не мешать prod данным
   postgres_data_dev:
   redis_data_dev:
 
@@ -31,12 +32,13 @@ services:
     container_name: pm-assistant-api-dev
     env_file:
       - .env
+    environment:
+      - RUN_BOT=false
     ports:
       - "${PORT:-8000}:8000"
     volumes:
       - .:/app
-      - /app/.venv  # Анонимный том, чтобы локальный .venv не затирал серверный
-    # Переопределяем команду для hot-reload
+      - /app/.venv
     command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     depends_on:
       - postgres
@@ -50,6 +52,8 @@ services:
     container_name: pm-assistant-worker-dev
     env_file:
       - .env
+    environment:
+      - RUN_BOT=true
     volumes:
       - .:/app
       - /app/.venv

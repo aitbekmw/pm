@@ -24,24 +24,41 @@ services:
     restart: unless-stopped
 
   api:
-    image: ${CI_REGISTRY_IMAGE}:${IMAGE_TAG:-latest}
+    image: pm-assistant-api:latest
     container_name: api
     env_file:
       - .env
     ports:
-    - "${PORT:-8000}:8000"
+      - "${PORT:-8000}:8000"
     depends_on:
       - postgres
       - redis
     restart: unless-stopped
 
+
   worker:
-    image: ${CI_REGISTRY_IMAGE}:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      target: runtime
     container_name: worker
     env_file:
       - .env
-    entrypoint: ["/app/worker.sh"]
+    volumes:
+      - .:/app
+      - /app/.venv
+    entrypoint: [ "/app/worker.sh" ]
     depends_on:
       - postgres
       - redis
     restart: unless-stopped
+
+#  worker:
+#    image: ${CI_REGISTRY_IMAGE}:${IMAGE_TAG:-latest}
+#    container_name: worker
+#    env_file:
+#      - .env
+#    entrypoint: ["/app/worker.sh"]
+#    depends_on:
+#      - postgres
+#      - redis
+#    restart: unless-stopped

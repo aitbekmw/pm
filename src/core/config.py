@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     SENTRY_ENVIRONMENT: str = Field(default="production", env="SENTRY_ENVIRONMENT")
     SENTRY_TRACES_SAMPLE_RATE: float = Field(default=0.005, env="SENTRY_TRACES_SAMPLE_RATE")
 
+    TELEGRAM_BOT_TOKEN: str = Field(default="", env="TELEGRAM_BOT_TOKEN")
+
+
     # OAuth session secret (для SessionMiddleware / CSRF-защита)
     # ВАЖНО: в продакшне задайте случайную строку через переменную окружения OAUTH_SESSION_SECRET
     OAUTH_SESSION_SECRET: str = Field(default=None, env="OAUTH_SESSION_SECRET")
