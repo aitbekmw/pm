@@ -1,7 +1,7 @@
 import logging
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
-# Импортируем DefaultBotProperties для совместимости с новой версией aiogram
+
 from aiogram.client.default import DefaultBotProperties
 from aiogram.types import ChatMemberUpdated
 from aiogram.filters import ChatMemberUpdatedFilter, JOIN_TRANSITION
@@ -23,7 +23,6 @@ def get_bot() -> Bot:
                 "TELEGRAM_BOT_TOKEN не задан. "
                 "Добавь его в .env и в класс Settings в config.py"
             )
-        # Исправлено: теперь parse_mode передаётся через DefaultBotProperties
         _bot = Bot(
             token=token,
             default=DefaultBotProperties(parse_mode=ParseMode.HTML)

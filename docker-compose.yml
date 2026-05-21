@@ -24,7 +24,7 @@ services:
     restart: unless-stopped
 
   api:
-    image: pm-assistant-api:latest
+    image: ${CI_REGISTRY_IMAGE}:${IMAGE_TAG:-latest}
     container_name: api
     env_file:
       - .env
@@ -35,30 +35,13 @@ services:
       - redis
     restart: unless-stopped
 
-
   worker:
-    build:
-      context: .
-      target: runtime
+    image: ${CI_REGISTRY_IMAGE}:${IMAGE_TAG:-latest}
     container_name: worker
     env_file:
       - .env
-    volumes:
-      - .:/app
-      - /app/.venv
-    entrypoint: [ "/app/worker.sh" ]
+    entrypoint: ["/app/worker.sh"]
     depends_on:
       - postgres
       - redis
     restart: unless-stopped
-
-#  worker:
-#    image: ${CI_REGISTRY_IMAGE}:${IMAGE_TAG:-latest}
-#    container_name: worker
-#    env_file:
-#      - .env
-#    entrypoint: ["/app/worker.sh"]
-#    depends_on:
-#      - postgres
-#      - redis
-#    restart: unless-stopped

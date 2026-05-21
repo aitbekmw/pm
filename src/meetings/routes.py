@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status, UploadFile, File, Form, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from urllib.parse import urlencode
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import logging
 from sqlalchemy import select
 
@@ -11,7 +12,6 @@ from src.core.permissions import get_current_user
 from src.meetings import schemas, services, selectors, dependencies as meeting_deps
 from src.projects import selectors as project_selectors
 from src.core.queue import enqueue_meeting_processing, enqueue_meeting_processing_from_subtitle
-
 from src.core.telegram import send_telegram_message
 from src.projects.models import Project
 
@@ -19,8 +19,10 @@ router = APIRouter(prefix="/meetings", tags=["meetings"])
 logger = logging.getLogger(__name__)
 
 
-@router.post("/", response_model=schemas.MeetingOut, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=schemas.MeetingOut, status_code=status.HTTP_201_CREATED,
+             summary="Создать встречу", description="Создает новую встречу и запускает обработку, если есть аудио или транскрипт.")
 async def create_meeting(
+        background_tasks: BackgroundTasks,
         title: str = Form(...),
         subtitle: Optional[str] = Form(None, description="Транскрипт из Google Meet"),
         project_id: Optional[int] = Form(None),
@@ -33,29 +35,16 @@ async def create_meeting(
         current_user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db)
 ):
-    """Создание встречи с проверкой прав доступа текущего пользователя"""
-
     if project_id:
-        has_access = await project_selectors.check_user_has_project_access(
-            db, current_user.id, current_user.role, project_id
-        )
+        has_access = await project_selectors.check_user_has_project_access(db, current_user.id, current_user.role, project_id)
         if not has_access:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied to this project"
-            )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this project")
 
     data = schemas.MeetingCreate(
-        title=title,
-        subtitle=subtitle,
-        project_id=project_id,
-        meeting_date=meeting_date,
-        comments=comments,
-        notes=notes,
-        duration=duration,
-        importance=importance
+        title=title, subtitle=subtitle, project_id=project_id,
+        meeting_date=meeting_date, comments=comments, notes=notes,
+        duration=duration, importance=importance
     )
-
     meeting = await services.create_meeting(db, data, current_user.id, audio_file)
 
     if audio_file:
@@ -66,61 +55,79 @@ async def create_meeting(
     if project_id:
         project_result = await db.execute(select(Project).where(Project.id == project_id))
         project = project_result.scalars().first()
-
         if project and project.telegram_chat_id:
             importance_mapping = {"high": "🔴 Высокий", "middle": "🟡 Средний", "low": "🟢 Низкий"}
-            importance_text = importance_mapping.get(importance, "🟢 Низкий")
+            importance_str = importance_mapping.get(importance, importance)
             date_str = meeting_date.strftime("%d.%m.%Y %H:%M") if meeting_date else "Не указана"
-
-            message_text = (
-                f"📅 <b>Загружена встреча:</b> {title}\n"
-                f"❗ <b>Уровень важности:</b> {importance_text}\n\n"
+            text = (
+                f"📅 <b>Новая встреча:</b> {title}\n"
                 f"📁 <b>Проект:</b> {project.name}\n"
-                f"🕐 <b>Время проведения:</b> {date_str}"
+                f"🕐 <b>Время:</b> {date_str}\n"
+                f"❗ <b>Важность:</b> {importance_str}"
             )
-            try:
-                await send_telegram_message(chat_id=project.telegram_chat_id, text=message_text)
-            except Exception as e:
-                logger.error(f"TG Error: {e}")
+            background_tasks.add_task(
+                send_telegram_message,
+                chat_id=project.telegram_chat_id,
+                text=text
+            )
 
     return meeting
 
 
-@router.get("/my", response_model=dict)
+@router.get("/my", response_model=dict, summary="Мои встречи", description="Получить список встреч текущего пользователя.")
 async def get_my_meetings(
+        request: Request,
         q: Optional[str] = Query(None),
         start_date: Optional[datetime] = Query(None),
         end_date: Optional[datetime] = Query(None),
-        duration_from: Optional[int] = Query(None),
-        duration_to: Optional[int] = Query(None),
-        sort_date: Optional[str] = Query(None),
-        sort_duration: Optional[str] = Query(None),
-        sort_importance: Optional[str] = Query(None),
-        skip: int = Query(0),
-        limit: int = Query(50),
+        duration_from: Optional[int] = Query(None, ge=0, description="Мин. длительность в секундах"),
+        duration_to: Optional[int] = Query(None, ge=0, description="Макс. длительность в секундах"),
+        sort_date: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по дате"),
+        sort_duration: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по длительности"),
+        sort_importance: Optional[str] = Query(None, regex="^(asc|desc)$", description="Сортировка по важности"),
+        skip: int = Query(0, ge=0),
+        limit: int = Query(50, ge=1, le=100),
         current_user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db)
 ):
     sort_fields = []
-    if sort_importance: sort_fields.append(f"importance_{sort_importance}")
-    if sort_date: sort_fields.append(f"date_{sort_date}")
-    if sort_duration: sort_fields.append(f"duration_{sort_duration}")
+    if sort_importance:
+        sort_fields.append(f"importance_{sort_importance}")
+    if sort_date:
+        sort_fields.append(f"date_{sort_date}")
+    if sort_duration:
+        sort_fields.append(f"duration_{sort_duration}")
     sort_by = ",".join(sort_fields) if sort_fields else "date_desc"
 
     meetings, total = await selectors.get_meetings_with_filters(
-        db, current_user.id, current_user.role, search_query=q,
-        organizer_id=current_user.id, start_date=start_date, end_date=end_date,
-        duration_from=duration_from, duration_to=duration_to, sort_by=sort_by,
+        db, current_user.id, current_user.role,
+        organizer_id=current_user.id, search_query=q,
+        start_date=start_date, end_date=end_date,
+        duration_from=duration_from, duration_to=duration_to,
+        sort_by=sort_by,
         skip=skip, limit=limit, return_count=True
     )
-    return {"count": total, "results": [schemas.MeetingListOutWithOrganizer.model_validate(m) for m in meetings]}
+
+    base_url = str(request.base_url).rstrip("/") + "/api/meetings/my"
+    params = dict(request.query_params)
+
+    params["skip"] = skip + limit
+    next_url = f"{base_url}?{urlencode(params)}" if skip + limit < total else None
+
+    params["skip"] = max(0, skip - limit)
+    previous_url = f"{base_url}?{urlencode(params)}" if skip > 0 else None
+
+    return {
+        "count": total,
+        "next": next_url,
+        "previous": previous_url,
+        "results": [schemas.MeetingListOutWithOrganizer.model_validate(m) for m in meetings]
+    }
 
 
-
-
-
-@router.get("/", response_model=dict)
+@router.get("/", response_model=dict, summary="Все встречи", description="Получить отфильтрованный список всех встреч.")
 async def get_meetings(
+        request: Request,
         q: Optional[str] = Query(None, min_length=1, description="Поиск по названию встречи"),
         project_id: Optional[int] = Query(None),
         organizer_id: Optional[int] = Query(None),
@@ -152,53 +159,38 @@ async def get_meetings(
             db, current_user.id, current_user.role, project_id
         )
         if not has_access:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied to this project"
-            )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this project")
+
         meetings, total = await selectors.get_project_meetings_with_filters(
-            db,
-            project_id,
-            search_query=q,
-            organizer_id=organizer_id,
-            start_date=start_date,
-            end_date=end_date,
-            duration_from=duration_from,
-            duration_to=duration_to,
-            sort_by=sort_by,
-            skip=skip,
-            limit=limit,
-            return_count=True
+            db, project_id,
+            search_query=q, organizer_id=organizer_id,
+            start_date=start_date, end_date=end_date,
+            duration_from=duration_from, duration_to=duration_to,
+            sort_by=sort_by, skip=skip, limit=limit, return_count=True
         )
     else:
         meetings, total = await selectors.get_meetings_with_filters(
-            db,
-            current_user.id,
-            current_user.role,
-            search_query=q,
-            project_id=project_id,
-            organizer_id=organizer_id,
-            start_date=start_date,
-            end_date=end_date,
-            duration_from=duration_from,
-            duration_to=duration_to,
-            sort_by=sort_by,
-            skip=skip,
-            limit=limit,
-            return_count=True
+            db, current_user.id, current_user.role,
+            search_query=q, project_id=project_id, organizer_id=organizer_id,
+            start_date=start_date, end_date=end_date,
+            duration_from=duration_from, duration_to=duration_to,
+            sort_by=sort_by, skip=skip, limit=limit, return_count=True
         )
 
-    base_url = "http://localhost:8000/api/meetings/"
-    next_url = f"{base_url}?skip={skip + limit}&limit={limit}" if skip + limit < total else None
-    previous_url = f"{base_url}?skip={max(0, skip - limit)}&limit={limit}" if skip > 0 else None
+    base_url = str(request.base_url).rstrip("/") + "/api/meetings/"
+    params = dict(request.query_params)
 
-    results = [schemas.MeetingListOutWithOrganizer.model_validate(meeting) for meeting in meetings]
+    params["skip"] = skip + limit
+    next_url = f"{base_url}?{urlencode(params)}" if skip + limit < total else None
+
+    params["skip"] = max(0, skip - limit)
+    previous_url = f"{base_url}?{urlencode(params)}" if skip > 0 else None
 
     return {
         "count": total,
         "next": next_url,
         "previous": previous_url,
-        "results": results
+        "results": [schemas.MeetingListOutWithOrganizer.model_validate(m) for m in meetings]
     }
 
 
@@ -231,10 +223,7 @@ async def search_meetings(
             db, current_user.id, current_user.role, project_id
         )
         if not has_access:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied to this project"
-            )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this project")
 
     meetings = await selectors.search_meetings(
         db, q, project_id, current_user.id, current_user.role, skip, limit
@@ -247,9 +236,7 @@ async def get_active_processing_status(
         current_user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db)
 ):
-    """Получить статус обработки активного (в процессе) митинга без указания ID"""
-    from datetime import datetime, timezone, timedelta
-
+    """Получить статус обработки активного митинга без указания ID"""
     processing = await selectors.get_active_processing_meeting(db, current_user.id)
 
     if not processing:
@@ -271,10 +258,16 @@ async def get_active_processing_status(
     estimated_completion = None
     if processing.status == "processing" and processing.started_at and processing.progress > 0:
         elapsed = (datetime.now(timezone.utc) - processing.started_at).total_seconds()
-        if processing.progress > 0:
-            total_estimated = (elapsed / processing.progress) * 100
-            remaining = total_estimated - elapsed
-            estimated_completion = datetime.now(timezone.utc) + timedelta(seconds=remaining)
+        total_estimated = (elapsed / processing.progress) * 100
+        remaining = total_estimated - elapsed
+        estimated_completion = datetime.now(timezone.utc) + timedelta(seconds=remaining)
+
+    stage_labels = {
+        "transcription": "Транскрибация аудио",
+        "summarization": "Создание резюме встречи",
+        "action_items": "Извлечение задач",
+        "pdf_generation": "Генерация PDF документа"
+    }
 
     return {
         "meeting_id": processing.meeting_id,
@@ -286,12 +279,7 @@ async def get_active_processing_status(
         "started_at": processing.started_at,
         "completed_at": processing.completed_at,
         "estimated_completion": estimated_completion,
-        "stage_info": {
-            "transcription": "Транскрибация аудио",
-            "summarization": "Создание резюме встречи",
-            "action_items": "Извлечение задач",
-            "pdf_generation": "Генерация PDF документа"
-        }.get(processing.current_stage, None)
+        "stage_info": stage_labels.get(processing.current_stage)
     }
 
 
@@ -300,27 +288,18 @@ async def get_active_meeting_details(
         current_user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db)
 ):
-    """Получить полные детали активного (в процессе) митинга без указания ID"""
+    """Получить полные детали активного митинга без указания ID"""
     processing = await selectors.get_active_processing_meeting(db, current_user.id)
 
     if not processing:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Нет активной обработки"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Нет активной обработки")
 
     meeting = await selectors.get_meeting_by_id(db, processing.meeting_id)
     if not meeting:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Meeting not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found")
 
     if meeting.organizer_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied to this meeting"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this meeting")
 
     transcript = await selectors.get_meeting_transcript(db, processing.meeting_id)
     summary = await selectors.get_meeting_summary(db, processing.meeting_id)
@@ -344,6 +323,7 @@ async def get_active_meeting_details(
     }
 
 
+
 @router.get("/{meeting_id}", response_model=schemas.MeetingDetailsOut)
 async def get_meeting(
         meeting: selectors.Meeting = Depends(meeting_deps.get_meeting_with_read_access),
@@ -354,7 +334,6 @@ async def get_meeting(
     transcript = await selectors.get_meeting_transcript(db, meeting_id)
     summary = await selectors.get_meeting_summary(db, meeting_id)
     action_items = await selectors.get_meeting_action_items(db, meeting_id)
-
     meeting_out = schemas.MeetingOut.model_validate(meeting)
 
     return schemas.MeetingDetailsOut(
@@ -376,8 +355,7 @@ async def update_meeting(
         db: AsyncSession = Depends(get_db)
 ):
     """Обновить встречу"""
-    updated_meeting = await services.update_meeting(db, meeting_id, data)
-    return updated_meeting
+    return await services.update_meeting(db, meeting_id, data)
 
 
 @router.put("/{meeting_id}/transcript", response_model=schemas.TranscriptOut)
@@ -387,17 +365,14 @@ async def update_meeting_transcript(
         meeting: selectors.Meeting = Depends(meeting_deps.get_meeting_with_edit_access),
         db: AsyncSession = Depends(get_db)
 ):
-    """Обновить транскрипт встречи"""
-    transcript = await services.update_transcript(db, meeting_id, data.content)
+    """Создать или обновить транскрипт встречи"""
+    transcript = await services.create_or_update_transcript(db, meeting_id, data.content)
     if not transcript:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Transcript not found for this meeting"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transcript not found for this meeting")
     return transcript
 
 
-@router.delete("/{meeting_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{meeting_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить встречу")
 async def delete_meeting(
         meeting: selectors.Meeting = Depends(meeting_deps.get_meeting_with_edit_access),
         db: AsyncSession = Depends(get_db)
@@ -420,13 +395,9 @@ async def move_meeting(
             db, current_user.id, current_user.role, project_id
         )
         if not has_access:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied to target project"
-            )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to target project")
 
-    updated_meeting = await services.move_meeting_to_project(db, meeting_id, project_id)
-    return updated_meeting
+    return await services.move_meeting_to_project(db, meeting_id, project_id)
 
 
 @router.get("/{meeting_id}/audio-url")
@@ -440,16 +411,9 @@ async def get_audio_url(
     download_url = await services.get_audio_download_url(db, meeting_id, as_attachment=True)
 
     if not url or not download_url:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Audio file not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio file not found")
 
-    return {
-        "url": url,
-        "download_url": download_url,
-        "expires_in": 3600
-    }
+    return {"url": url, "download_url": download_url, "expires_in": 3600}
 
 
 @router.post("/{meeting_id}/notes", response_model=schemas.NoteOut, status_code=status.HTTP_201_CREATED)
@@ -462,10 +426,7 @@ async def create_note(
     """Создать заметку для встречи"""
     meeting = await selectors.get_meeting_by_id(db, meeting_id)
     if not meeting:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Meeting not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found")
 
     if meeting.project_id:
         has_access = await project_selectors.check_user_has_project_access(
@@ -476,8 +437,7 @@ async def create_note(
     elif meeting.organizer_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
-    note = await services.create_note(db, meeting_id, data.content, current_user.id)
-    return note
+    return await services.create_note(db, meeting_id, data.content, current_user.id)
 
 
 @router.get("/{meeting_id}/notes", response_model=List[schemas.NoteOut])
@@ -491,8 +451,7 @@ async def get_notes(
     if not meeting:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found")
 
-    notes = await selectors.get_meeting_notes(db, meeting_id)
-    return notes
+    return await selectors.get_meeting_notes(db, meeting_id)
 
 
 @router.post("/{meeting_id}/action-items", response_model=schemas.ActionItemOut, status_code=status.HTTP_201_CREATED)
@@ -516,10 +475,9 @@ async def create_action_item(
     elif meeting.organizer_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
-    action_item = await services.create_action_item(
+    return await services.create_action_item(
         db, meeting_id, data.title, data.description, data.assignee_id, data.due_date
     )
-    return action_item
 
 
 @router.get("/{meeting_id}/action-items", response_model=List[schemas.ActionItemOut])
@@ -533,8 +491,7 @@ async def get_action_items(
     if not meeting:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found")
 
-    action_items = await selectors.get_meeting_action_items(db, meeting_id)
-    return action_items
+    return await selectors.get_meeting_action_items(db, meeting_id)
 
 
 @router.post("/{meeting_id}/process")
@@ -579,7 +536,7 @@ async def get_processing_status(
     if not processing:
         return {
             "meeting_id": meeting_id,
-            "meeting": schemas.MeetingOut.model_validate(meeting) if meeting else None,
+            "meeting": schemas.MeetingOut.model_validate(meeting),
             "status": "not_started",
             "current_stage": None,
             "progress": 0,
@@ -591,28 +548,31 @@ async def get_processing_status(
         }
 
     if processing.status == "processing" and processing.started_at:
-        from datetime import datetime, timezone
         elapsed_minutes = (datetime.now(timezone.utc) - processing.started_at).total_seconds() / 60
-
         if elapsed_minutes > 20:
             processing.status = "failed"
-            processing.error_message = f"Обработка прервана: процесс не отвечал более 20 минут"
+            processing.error_message = "Обработка прервана: процесс не отвечал более 20 минут"
             processing.completed_at = datetime.now(timezone.utc)
             await db.commit()
             await db.refresh(processing)
 
     estimated_completion = None
     if processing.status == "processing" and processing.started_at and processing.progress > 0:
-        from datetime import datetime, timezone, timedelta
         elapsed = (datetime.now(timezone.utc) - processing.started_at).total_seconds()
-        if processing.progress > 0:
-            total_estimated = (elapsed / processing.progress) * 100
-            remaining = total_estimated - elapsed
-            estimated_completion = datetime.now(timezone.utc) + timedelta(seconds=remaining)
+        total_estimated = (elapsed / processing.progress) * 100
+        remaining = total_estimated - elapsed
+        estimated_completion = datetime.now(timezone.utc) + timedelta(seconds=remaining)
+
+    stage_labels = {
+        "transcription": "Транскрибация аудио",
+        "summarization": "Создание резюме встречи",
+        "action_items": "Извлечение задач",
+        "pdf_generation": "Генерация PDF документа"
+    }
 
     return {
         "meeting_id": meeting_id,
-        "meeting": schemas.MeetingOut.model_validate(meeting) if meeting else None,
+        "meeting": schemas.MeetingOut.model_validate(meeting),
         "status": processing.status,
         "current_stage": processing.current_stage,
         "progress": processing.progress or 0,
@@ -620,12 +580,7 @@ async def get_processing_status(
         "started_at": processing.started_at,
         "completed_at": processing.completed_at,
         "estimated_completion": estimated_completion,
-        "stage_info": {
-            "transcription": "Транскрибация аудио",
-            "summarization": "Создание резюме встречи",
-            "action_items": "Извлечение задач",
-            "pdf_generation": "Генерация PDF документа"
-        }.get(processing.current_stage, None)
+        "stage_info": stage_labels.get(processing.current_stage)
     }
 
 

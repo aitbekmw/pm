@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-import io
 import logging
 import uuid
 import os
@@ -18,7 +17,6 @@ from src.meetings import selectors
 from arq.connections import RedisSettings
 from src.core.config import settings
 from src.core.logging import setup_logging
-
 from src.core.telegram import start_bot_polling
 
 import_all_models()
@@ -65,12 +63,10 @@ async def process_meeting(ctx, meeting_id: int):
             if transcript_obj:
                 logger.info(f"Transcript already exists for meeting {meeting_id}. Skipping transcription.")
                 formatted_transcript = transcript_obj.content
-                transcript_text = formatted_transcript
             else:
                 processing.current_stage = "transcription"
                 processing.progress = 10
                 await db.commit()
-
 
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
                     tmp_path = tmp.name
@@ -81,7 +77,6 @@ async def process_meeting(ctx, meeting_id: int):
 
                 processing.progress = 20
                 await db.commit()
-
 
                 try:
                     with open(tmp_path, "rb") as audio_file:
@@ -202,7 +197,6 @@ async def process_meeting(ctx, meeting_id: int):
 
                 pdf_path = f"meetings/{uuid.uuid4()}.pdf"
                 pdf_s3_path, _ = storage.upload_file(pdf_buffer, pdf_path, content_type="application/pdf")
-
                 if pdf_s3_path:
                     meeting.pdf_file_path = pdf_s3_path
                     await db.commit()
@@ -219,15 +213,16 @@ async def process_meeting(ctx, meeting_id: int):
             logger.error(f"Error processing meeting {meeting_id}: {e}", exc_info=True)
             await db.rollback()
 
-            status = "failed"
+            fail_status = "failed"
             if isinstance(e, TranscriptionError) and e.reason == "no_speech_detected":
-                status = "no_speech_detected"
+                fail_status = "no_speech_detected"
 
-            processing.status = status
+            processing.status = fail_status
             processing.error_message = str(e)
             processing.completed_at = datetime.now(timezone.utc)
             await db.commit()
             return {"error": str(e), "meeting_id": meeting_id}
+
         finally:
             if tmp_path and os.path.exists(tmp_path):
                 os.unlink(tmp_path)
@@ -402,15 +397,7 @@ async def startup(ctx):
     """Инициализация при запуске воркера"""
     setup_logging()
 
-    # Worker запускает бота только если переменная RUN_BOT=true
-    if os.getenv("RUN_BOT") == "true":
-        logger.info("ARQ Worker: запуск встроенного Telegram-бота...")
-        asyncio.create_task(start_bot_polling())
-    else:
-        logger.info("ARQ Worker: запуск бота пропущен (RUN_BOT != true)")
-
-
-    if os.getenv("RUN_BOT") == "true":
+    if settings.RUN_BOT:  # используем settings вместо os.getenv
         logger.info("ARQ Worker: запуск встроенного Telegram-бота...")
         asyncio.create_task(start_bot_polling())
     else:
@@ -422,7 +409,6 @@ async def shutdown(ctx):
     pass
 
 
-# Конфигурация ARQ воркера
 class WorkerSettings:
     functions = [process_meeting, process_meeting_from_subtitle, send_meeting_reminder]
     on_startup = startup

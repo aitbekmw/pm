@@ -44,20 +44,17 @@ setup_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Наполняем таблицу компаний дефолтными значениями
     async with AsyncSessionLocal() as db:
         await seed_default_companies(db)
 
-    # ЗАПУСК БОТА ТОЛЬКО ЕСЛИ ВКЛЮЧЕНА ПЕРЕМЕННАЯ RUN_BOT
     bot_task = None
-    if os.getenv("RUN_BOT") == "true":
+    if settings.RUN_BOT:
         from src.core.telegram import start_bot_polling
         bot_task = asyncio.create_task(start_bot_polling())
         logger.info("Telegram бот запущен")
 
     yield
 
-    # Останавливаем бота при завершении, если он был запущен
     if bot_task:
         bot_task.cancel()
         try:

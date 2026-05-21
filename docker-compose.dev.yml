@@ -3,6 +3,8 @@ version: '3.8'
 volumes:
   postgres_data_dev:
   redis_data_dev:
+  venv_api_dev:
+  venv_worker_dev:
 
 services:
   postgres:
@@ -38,7 +40,7 @@ services:
       - "${PORT:-8000}:8000"
     volumes:
       - .:/app
-      - /app/.venv
+      - venv_api_dev:/app/.venv
     command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     depends_on:
       - postgres
@@ -56,7 +58,7 @@ services:
       - RUN_BOT=true
     volumes:
       - .:/app
-      - /app/.venv
+      - venv_worker_dev:/app/.venv
     entrypoint: ["/app/worker.sh"]
     depends_on:
       - postgres
