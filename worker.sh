@@ -25,4 +25,6 @@ fi
 
 # Запуск ARQ worker
 echo "Запуск ARQ Worker для обработки встреч..."
+#exec arq src.core.tasks.WorkerSettings
+export RUN_BOT=true
 exec arq src.core.tasks.WorkerSettings

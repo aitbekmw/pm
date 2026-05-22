@@ -7,6 +7,9 @@ from contextlib import asynccontextmanager
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+import os
+import asyncio
+import logging
 
 from src.core.config import settings
 from src.core.logging import setup_logging
@@ -21,11 +24,10 @@ from src.companies.services import seed_default_companies
 from src.db.session import AsyncSessionLocal
 from src.core.middleware.request_id import RequestIdMiddleware
 from src.core.middleware.logging import RequestLoggingMiddleware
-import logging
 
 logger = logging.getLogger(__name__)
 
-# Initialize Sentry before logging setup
+# Initialize Sentry
 if settings.SENTRY_DSN:
     sentry_sdk.init(
         dsn=settings.SENTRY_DSN,
@@ -40,22 +42,31 @@ if settings.SENTRY_DSN:
 
 setup_logging()
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Наполняем таблицу компаний дефолтными значениями если она пуста
     async with AsyncSessionLocal() as db:
         await seed_default_companies(db)
+
+    bot_task = None
+    if settings.RUN_BOT:
+        from src.core.telegram import start_bot_polling
+        bot_task = asyncio.create_task(start_bot_polling())
+        logger.info("Telegram бот запущен")
+
     yield
 
+    if bot_task:
+        bot_task.cancel()
+        try:
+            await bot_task
+        except asyncio.CancelledError:
+            logger.info("Telegram бот остановлен")
 
 app = FastAPI(
     title=settings.app_name,
     debug=settings.debug,
     lifespan=lifespan,
 )
-
-
 
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
@@ -82,7 +93,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Logging middlewares (added last means they wrap as outermost and run first)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RequestIdMiddleware)
 

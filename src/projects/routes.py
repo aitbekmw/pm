@@ -318,9 +318,12 @@ async def update_project(
     description: Optional[str] = Form(None),
     cover: Optional[UploadFile] = File(None),
     cover_name: Optional[str] = Form(None),
+    telegram_chat_id: Optional[str] = Form(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+
+
     """Обновить проект (любой участник проекта)
     
     **Параметры (form-data):**
@@ -367,7 +370,8 @@ async def update_project(
         description=description,
         confluence_data=None,
         jira_data=None,
-        cover=new_cover  # Устанавливаем cover только если передана дефолтная обложка
+        cover=new_cover,  # Устанавливаем cover только если передана дефолтная обложка
+        telegram_chat_id=telegram_chat_id
     )
     
     # Обновляем проект
