@@ -17,6 +17,7 @@ from src.meetings import selectors
 from arq.connections import RedisSettings
 from src.core.config import settings
 from src.core.logging import setup_logging
+
 from src.core.telegram import start_bot_polling
 
 import_all_models()
