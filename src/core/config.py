@@ -79,6 +79,7 @@ class Settings(BaseSettings):
     SENTRY_TRACES_SAMPLE_RATE: float = Field(default=0.005, env="SENTRY_TRACES_SAMPLE_RATE")
 
     TELEGRAM_BOT_TOKEN: str = Field(default="", env="TELEGRAM_BOT_TOKEN")
+    RUN_BOT: bool = Field(default=False, env="RUN_BOT")
 
 
     # OAuth session secret (для SessionMiddleware / CSRF-защита)

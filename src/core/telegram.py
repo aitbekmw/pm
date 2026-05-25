@@ -1,10 +1,9 @@
 import logging
-from aiogram import Bot, Dispatcher
+from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ParseMode
-
 from aiogram.client.default import DefaultBotProperties
-from aiogram.types import ChatMemberUpdated
-from aiogram.filters import ChatMemberUpdatedFilter, JOIN_TRANSITION
+from aiogram.types import ChatMemberUpdated, Message
+from aiogram.filters import ChatMemberUpdatedFilter, JOIN_TRANSITION, Command
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +12,6 @@ _dp: Dispatcher | None = None
 
 
 def get_bot() -> Bot:
-    """Возвращает синглтон бота. Токен берётся из settings."""
     global _bot
     if _bot is None:
         from src.core.config import settings
@@ -31,12 +29,42 @@ def get_bot() -> Bot:
 
 
 def get_dispatcher() -> Dispatcher:
-    """Возвращает синглтон диспетчера с обработчиками."""
     global _dp
     if _dp is None:
         _dp = Dispatcher()
 
-        # Обработчик когда бот добавляется в группу
+        # ── /start ──────────────────────────────────────────────────────────
+        @_dp.message(Command("start"))
+        async def cmd_start(message: Message):
+            await message.answer(
+                "👋 Привет! Я <b>PM Assistant Bot</b>.\n\n"
+                "Я помогаю уведомлять команду о встречах и задачах.\n\n"
+                "📌 Чтобы подключить меня к проекту:\n"
+                "1. Добавь меня в нужную группу\n"
+                "2. Скопируй Chat ID группы\n"
+                "3. Вставь его в настройках проекта\n\n"
+                f"Твой Chat ID: <code>{message.chat.id}</code>"
+            )
+
+        # ── /help ────────────────────────────────────────────────────────────
+        @_dp.message(Command("help"))
+        async def cmd_help(message: Message):
+            await message.answer(
+                "ℹ️ <b>PM Assistant Bot</b>\n\n"
+                "Доступные команды:\n"
+                "/start — начало работы\n"
+                "/chatid — узнать Chat ID этого чата\n"
+                "/help — эта справка"
+            )
+
+        # ── /chatid ──────────────────────────────────────────────────────────
+        @_dp.message(Command("chatid"))
+        async def cmd_chatid(message: Message):
+            await message.answer(
+                f"Chat ID этого чата:\n<code>{message.chat.id}</code>"
+            )
+
+        # ── Бот добавлен в группу ────────────────────────────────────────────
         @_dp.my_chat_member(ChatMemberUpdatedFilter(JOIN_TRANSITION))
         async def bot_added_to_group(event: ChatMemberUpdated):
             try:
@@ -59,7 +87,6 @@ def get_dispatcher() -> Dispatcher:
 
 
 async def start_bot_polling():
-    """Запускает polling бота для обработки событий."""
     bot = get_bot()
     dp = get_dispatcher()
     logger.info("Telegram: запуск polling...")
@@ -67,10 +94,6 @@ async def start_bot_polling():
 
 
 async def send_telegram_message(chat_id: str | int, text: str) -> bool:
-    """
-    Отправляет сообщение в Telegram-чат.
-    Возвращает True при успехе, False при ошибке (не крашит приложение).
-    """
     try:
         bot = get_bot()
         await bot.send_message(chat_id=chat_id, text=text)

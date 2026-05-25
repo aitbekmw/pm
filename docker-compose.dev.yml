@@ -3,8 +3,6 @@ version: '3.8'
 volumes:
   postgres_data_dev:
   redis_data_dev:
-  venv_api_dev:
-  venv_worker_dev:
 
 services:
   postgres:
@@ -27,6 +25,18 @@ services:
       - "6379:6379"
     restart: unless-stopped
 
+  minio:
+    image: minio/minio
+    container_name: pm-assistant-minio-dev
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -39,9 +49,9 @@ services:
     ports:
       - "${PORT:-8000}:8000"
     volumes:
-      - .:/app
-      - venv_api_dev:/app/.venv
-    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+      - ./src:/app/src
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
     depends_on:
       - postgres
       - redis
@@ -57,8 +67,7 @@ services:
     environment:
       - RUN_BOT=true
     volumes:
-      - .:/app
-      - venv_worker_dev:/app/.venv
+      - ./src:/app/src
     entrypoint: ["/app/worker.sh"]
     depends_on:
       - postgres
